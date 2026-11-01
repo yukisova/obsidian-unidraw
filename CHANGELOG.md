@@ -1,10 +1,20 @@
 # Changelog
 
+## 0.4.11 (2026-11-01)
+
+- Raised `minAppVersion` to **1.7.5**.
+- Restored `getLeaf("tab")` and `revealLeaf()` for new drawing tabs.
+
+## 0.4.10 (2026-11-01)
+
+- Added a drawing-tool card at the inspector position for Pencil, Rectangle
+  Fill and Fill, with the current tool/character and quick character choices.
+
 ## 0.4.9 (2026-11-01)
 
 - Changed the plugin author to **yukisova**.
-- Replaced newer `revealLeaf` API with the `active: true` view state for
-  compatibility with `minAppVersion` 1.5.0.
+- Replaced newer leaf-creation/reveal APIs with `getLeaf()`, `setViewState()`
+  and `setActiveLeaf()` for compatibility with `minAppVersion` 1.5.0.
 
 ## 0.4.8 (2026-11-01)
 

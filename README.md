@@ -50,7 +50,7 @@ Obsidian view with JSON `.unidraw` element files.
 
 ### From the release package
 
-Build or download `dist/unidraw-0.4.9/unidraw-0.4.9.zip`. Unzip it so that
+Build or download `dist/unidraw-0.4.11/unidraw-0.4.11.zip`. Unzip it so that
 `main.js`, `manifest.json` and `styles.css` live inside:
 
 ```text
@@ -60,7 +60,7 @@ Build or download `dist/unidraw-0.4.9/unidraw-0.4.9.zip`. Unzip it so that
 Then restart Obsidian, open **Settings → Community plugins**, disable Restricted
 Mode if necessary, and enable **Unidraw**.
 
-Unidraw requires **Obsidian 1.5.0 or newer**. It is not desktop-only; the
+Unidraw requires **Obsidian 1.7.5 or newer**. It is not desktop-only; the
 right-click tools use pointer buttons, so a desktop or mouse is recommended for
 all features.
 
@@ -104,8 +104,10 @@ current build.
   (the temporary element being drawn or moved).
 - **No contextual style bar** — tool settings live in the selected-element
   inspector; the status bar keeps the current tool hint. Pencil, filled-rectangle
-  and fill tools show a small drawing-character card above the inspector even
-  when nothing is selected.
+  and fill tools replace the inspector with a drawing-tool card showing the
+  active tool, its current character and quick character switches.
+
+![Drawing tool card](docs/screenshots/unidraw-drawing-tool.png)
 - **Shape tools** switch back to the Select tool after a shape is created. The
   Select tool's first click only selects; moving starts on the following drag.
   Dragging with no selection marquee-selects.
@@ -447,9 +449,9 @@ The **Export** menu offers:
   current drawing.
 - **Insert into active note** — inserts a fenced block at the cursor.
 
-The current release lives in **`dist/unidraw-0.4.9/`**: the three plugin
-files plus `unidraw-0.4.9.zip`. Previous releases are kept compressed in
-**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/` … `unidraw-0.4.8/`).
+The current release lives in **`dist/unidraw-0.4.11/`**: the three plugin
+files plus `unidraw-0.4.11.zip`. Previous releases are kept compressed in
+**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/` … `unidraw-0.4.10/`).
 
 ## Settings
 
@@ -517,9 +519,9 @@ npm run screenshot   # capture the documentation screenshots (Chrome required)
 npm run link -- /path/to/vault
 ```
 
-`npm run build` produces `dist/unidraw-0.4.9/main.js`,
-`dist/unidraw-0.4.9/manifest.json`, `dist/unidraw-0.4.9/styles.css` and
-`dist/unidraw-0.4.9/unidraw-0.4.9.zip`, while leaving `dist/backup/` untouched.
+`npm run build` produces `dist/unidraw-0.4.11/main.js`,
+`dist/unidraw-0.4.11/manifest.json`, `dist/unidraw-0.4.11/styles.css` and
+`dist/unidraw-0.4.11/unidraw-0.4.11.zip`, while leaving `dist/backup/` untouched.
 
 The screenshot script uses `CHROME_PATH` if set, otherwise the macOS Chrome
 location, and drives Chrome through the DevTools Protocol with a temporary

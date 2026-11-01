@@ -229,12 +229,13 @@ export default class UnidrawPlugin extends Plugin {
       new Notice(this.t("notice.saveFailed"));
       return;
     }
-    const leaf = this.app.workspace.getLeaf(true);
+    const leaf = this.app.workspace.getLeaf("tab");
     await leaf.setViewState({
       type: VIEW_TYPE_UNIDRAW,
       state: { file: file.path },
       active: true,
     });
+    await this.app.workspace.revealLeaf(leaf);
     new Notice(this.t("notice.created", { name: file.name }));
   }
 }

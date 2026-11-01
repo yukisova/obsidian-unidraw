@@ -592,10 +592,14 @@ export class UnidrawEditorUI {
     this.inspectorEl.empty();
     const tool = this.editor.getStatus().tool;
     const charTool = tool === "pencil" || tool === "solidRect" || tool === "fill";
-    if (charTool) this.buildToolCharCard(tool);
+    if (charTool) {
+      this.workspaceEl.addClass("has-inspector");
+      this.buildDrawingToolCard(tool);
+      return;
+    }
     const selected = this.editor.getSelectedObjects();
     if (selected.length === 0) {
-      this.workspaceEl.toggleClass("has-inspector", charTool);
+      this.workspaceEl.removeClass("has-inspector");
       return;
     }
     this.workspaceEl.addClass("has-inspector");
@@ -634,25 +638,50 @@ export class UnidrawEditorUI {
     else if (object.kind === "cells") this.buildCellsInspector(object);
   }
 
-  private buildToolCharCard(tool: "pencil" | "solidRect" | "fill"): void {
+  private buildDrawingToolCard(tool: "pencil" | "solidRect" | "fill"): void {
     const def = TOOL_DEFS.find((item) => item.id === tool);
-    const card = el("div", "unidraw-tool-options-card", this.inspectorEl);
-    const header = el("div", "unidraw-tool-options-header", card);
-    const icon = el("span", "unidraw-tool-options-icon", header);
-    if (def) setIconSafe(this.host, icon, def.icon);
-    el("span", "unidraw-tool-options-title", header).setText(
-      def ? this.t(def.labelKey) : this.t("toolOptions.title"),
-    );
-    const row = el("div", "unidraw-tool-options-row", card);
-    const label = el("span", "unidraw-tool-options-label", row);
-    label.setText(this.t(tool === "pencil" ? "style.pencilChar" : "style.fillChar"));
     const char = tool === "pencil" ? this.editor.getDrawChar() : this.editor.getFillChar();
-    const button = el("button", "unidraw-tool-options-char", row) as HTMLButtonElement;
-    button.type = "button";
-    button.setText(char);
-    this.host.tooltip(button, this.t("palette.title"));
-    button.addEventListener("click", () => {
-      this.openCharPalette(button, tool === "pencil" ? "draw" : "fill");
+    const card = el("div", "unidraw-drawing-card", this.inspectorEl);
+    const header = el("div", "unidraw-drawing-header", card);
+    const icon = el("span", "unidraw-drawing-tool-icon", header);
+    if (def) setIconSafe(this.host, icon, def.icon);
+    const heading = el("div", "unidraw-drawing-heading", header);
+    el("div", "unidraw-drawing-title", heading).setText(def ? this.t(def.labelKey) : this.t("toolOptions.title"));
+    el("div", "unidraw-drawing-hint", heading).setText(def ? this.t(def.hintKey) : this.t("toolOptions.hint"));
+
+    const current = el("div", "unidraw-drawing-current", card);
+    const currentBody = el("div", "unidraw-drawing-current-body", current);
+    el("div", "unidraw-drawing-current-label", currentBody).setText(this.t("toolOptions.current"));
+    const currentButton = el("button", "unidraw-drawing-current-char", current) as HTMLButtonElement;
+    currentButton.type = "button";
+    currentButton.setText(char);
+    currentButton.addEventListener("click", () => {
+      this.openCharPalette(currentButton, tool === "pencil" ? "draw" : "fill");
+    });
+
+    el("div", "unidraw-drawing-section-label", card).setText(this.t("toolOptions.quick"));
+    const quick = el("div", "unidraw-drawing-quick", card);
+    const chars = tool === "pencil"
+      ? ["█", "▓", "▒", "░", "■", "●", "◆", "★", "•", "·", "+", "×"]
+      : ["█", "▓", "▒", "░", "▚", "▞", "▙", "▟", "■", "▪", "▮", "▰"];
+    for (const ch of chars) {
+      const button = el("button", "unidraw-drawing-char", quick) as HTMLButtonElement;
+      button.type = "button";
+      button.setText(ch);
+      button.toggleClass("is-active", ch === char);
+      button.addEventListener("click", () => {
+        if (tool === "pencil") this.editor.setDrawChar(ch);
+        else this.editor.setFillChar(ch);
+        this.updateStatus();
+      });
+    }
+
+    const more = el("button", "unidraw-drawing-more", card) as HTMLButtonElement;
+    more.type = "button";
+    setIconSafe(this.host, el("span", "unidraw-drawing-more-icon", more), "grid-3x3");
+    el("span", "", more).setText(this.t("toolOptions.more"));
+    more.addEventListener("click", () => {
+      this.openCharPalette(more, tool === "pencil" ? "draw" : "fill");
     });
   }
 

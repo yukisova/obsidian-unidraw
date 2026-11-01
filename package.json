@@ -1,6 +1,6 @@
 {
   "name": "unidraw",
-  "version": "0.4.9",
+  "version": "0.4.11",
   "description": "Draw Unicode character art and diagrams.",
   "main": "main.js",
   "scripts": {

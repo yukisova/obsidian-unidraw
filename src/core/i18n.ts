@@ -9,6 +9,10 @@ export const en = {
 
   "tool.select": "Select",
   "toolOptions.title": "Drawing character",
+  "toolOptions.hint": "Choose the character used by this drawing tool.",
+  "toolOptions.current": "Current character",
+  "toolOptions.quick": "Quick characters",
+  "toolOptions.more": "More characters",
   "tool.hand": "Pan",
   "tool.pencil": "Pencil",
   "tool.eraser": "Eraser",
@@ -555,6 +559,10 @@ export const zh: Record<MessageKey, string> = {
 
   "tool.select": "选择",
   "toolOptions.title": "绘制字符",
+  "toolOptions.hint": "选择当前绘制工具使用的字符。",
+  "toolOptions.current": "当前字符",
+  "toolOptions.quick": "快速切换",
+  "toolOptions.more": "更多字符",
   "tool.hand": "平移",
   "tool.pencil": "铅笔",
   "tool.eraser": "橡皮擦",

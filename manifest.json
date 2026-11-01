@@ -1,8 +1,8 @@
 {
   "id": "unidraw",
   "name": "Unidraw",
-  "version": "0.4.9",
-  "minAppVersion": "1.5.0",
+  "version": "0.4.11",
+  "minAppVersion": "1.7.5",
   "description": "Draw Unicode character art, element-based diagrams and shapes.",
   "author": "yukisova",
   "isDesktopOnly": false

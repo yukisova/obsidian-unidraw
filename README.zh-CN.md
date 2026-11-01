@@ -49,8 +49,8 @@ Unidraw 结合了 [ASCII Canvas](#致谢) 的网格绘制、[asciiflow](https://
 
 ### 使用发布包
 
-从 [`dist/unidraw-0.4.9/`](dist/unidraw-0.4.9/) 获取
-`unidraw-0.4.9.zip`，解压后确保以下文件位于：
+从 [`dist/unidraw-0.4.11/`](dist/unidraw-0.4.11/) 获取
+`unidraw-0.4.11.zip`，解压后确保以下文件位于：
 
 ```text
 <你的仓库>/.obsidian/plugins/unidraw/
@@ -59,7 +59,7 @@ Unidraw 结合了 [ASCII Canvas](#致谢) 的网格绘制、[asciiflow](https://
 即 `main.js`、`manifest.json` 和 `styles.css`。重启 Obsidian，进入
 **设置 → 第三方插件**，必要时关闭安全模式，然后启用 **Unidraw**。
 
-需要 **Obsidian 1.5.0 或更高版本**。右键工具需要鼠标，桌面端体验最佳。
+需要 **Obsidian 1.7.5 或更高版本**。右键工具需要鼠标，桌面端体验最佳。
 
 ### 从源码构建
 
@@ -85,7 +85,9 @@ npm run link -- "/path/to/vault"
 - **画布** — 网格字符画，由静态、交互、新元素三张叠加画布组成；左侧是选中元素的编辑卡片，右侧是所有元素的列表卡片。列表行带类型图标和仅图标的显示/锁定按钮；无需先选中，直接拖动行即可调整层级。集合行带折叠箭头，展开后以缩进子行显示子元素，可单独显示/锁定并拖动调整集合内 z-index。支持 Ctrl/⌘ 点击间断多选、Shift 点击连续多选。全局涂鸦没有锁定按钮。
 - **集合检查器** — 可直接在检查器标题处重命名集合；集合子卡片可在**分离 / 合并**之间切换内部元素交叉处的渲染方式，并可将集合保存为 JSON 模板。模板写入插件目录下的 `group-templates.json`。
 - **左侧元素检查器** — 类型图标、图标式层级区、图标式转换区、形状/文字属性和图标式复制/删除/编辑按钮；显示和锁定操作在右侧元素列表中。
-- **无上下文样式栏** — 工具属性在选中元素的检查器中编辑；状态栏保留当前工具提示。铅笔、矩形填充和填充工具即使没有选中元素，也会在左侧显示绘制字符小卡片。
+- **无上下文样式栏** — 工具属性在选中元素的检查器中编辑；状态栏保留当前工具提示。选择铅笔、矩形填充或填充工具时，左侧检查器位置会切换为绘制工具卡片，显示当前工具、当前字符和快速字符切换。
+
+![绘制工具卡片](docs/screenshots/unidraw-drawing-tool.png)
 - **形状工具**创建元素后自动切回选择工具。选择工具的第一次点击只选中，下一次拖动才移动；没有选中任何元素时拖拽执行框选。
 
 ## 工具
@@ -352,9 +354,9 @@ npm run link -- "/path/to/vault"
 - **导出 Markdown 文件** — 在当前字符画所在目录保存带代码块的 `.md`。
 - **插入当前笔记** — 在光标处插入代码块。
 
-当前版本位于 **`dist/unidraw-0.4.9/`**：包含三个插件文件和
-`unidraw-0.4.9.zip`。过往版本的源码和可安装构建包压缩保存在
-**`dist/backup/`**（`unidraw-0.1.0/`、`unidraw-0.2.0/`、`unidraw-0.2.1/` … `unidraw-0.4.8/`）。
+当前版本位于 **`dist/unidraw-0.4.11/`**：包含三个插件文件和
+`unidraw-0.4.11.zip`。过往版本的源码和可安装构建包压缩保存在
+**`dist/backup/`**（`unidraw-0.1.0/`、`unidraw-0.2.0/`、`unidraw-0.2.1/` … `unidraw-0.4.10/`）。
 
 ## 设置
 
@@ -420,9 +422,9 @@ npm run screenshot   # 生成文档截图（需要 Chrome）
 npm run link -- /path/to/vault
 ```
 
-`npm run build` 会生成 `dist/unidraw-0.4.9/main.js`、
-`dist/unidraw-0.4.9/manifest.json`、`dist/unidraw-0.4.9/styles.css` 和
-`dist/unidraw-0.4.9/unidraw-0.4.9.zip`，并保留 `dist/backup/` 不变。
+`npm run build` 会生成 `dist/unidraw-0.4.11/main.js`、
+`dist/unidraw-0.4.11/manifest.json`、`dist/unidraw-0.4.11/styles.css` 和
+`dist/unidraw-0.4.11/unidraw-0.4.11.zip`，并保留 `dist/backup/` 不变。
 
 截图脚本默认使用 macOS 上的 Chrome，也可以通过 `CHROME_PATH` 指定路径，并通过
 Chrome DevTools Protocol 和临时用户目录工作。
