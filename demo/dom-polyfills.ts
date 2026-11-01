@@ -8,6 +8,7 @@ type DomHelpers = {
   addClass?: (...classes: string[]) => void;
   removeClass?: (...classes: string[]) => void;
   toggleClass?: (cls: string, value?: boolean) => void;
+  setCssStyles?: (styles: Partial<CSSStyleDeclaration>) => void;
 };
 
 const proto = HTMLElement.prototype as HTMLElement & DomHelpers;
@@ -35,5 +36,16 @@ if (!proto.toggleClass) {
   proto.toggleClass = function toggleClass(this: HTMLElement, cls: string, value?: boolean) {
     if (value === undefined) this.classList.toggle(cls);
     else this.classList.toggle(cls, value);
+  };
+}
+if (!proto.setCssStyles) {
+  proto.setCssStyles = function setCssStyles(this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
+    const parts: string[] = [];
+    for (const [key, value] of Object.entries(styles)) {
+      if (value === undefined || value === null) continue;
+      const property = key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+      parts.push(`${property}:${String(value)}`);
+    }
+    this.setAttribute("style", parts.join(";"));
   };
 }

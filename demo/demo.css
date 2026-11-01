@@ -236,3 +236,12 @@ body.demo-still *::after {
   animation: none !important;
   transition: none !important;
 }
+
+
+html.theme-dark {
+  color-scheme: dark;
+}
+
+html.theme-light {
+  color-scheme: light;
+}

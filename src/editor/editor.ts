@@ -1,15 +1,9 @@
 import { DrawingDocument, WIDE_CONT } from "../core/document";
 import {
-  addLayer as addLayerToData,
-  canMergeLayers,
-  cloneData,
   composeData,
   duplicateObjectsForPaste,
-  mergeLayers as mergeLayersInData,
   parseUnidraw,
   serializeUnidraw,
-  shiftObject,
-  uniqueLayerName,
 } from "../core/file-format";
 import {
   boundsOfObjects,
@@ -17,7 +11,6 @@ import {
   createPadding,
   findObject,
   getActiveLayer,
-  getLayer,
   allObjects,
   objectBounds,
   removeObjectById,
@@ -61,7 +54,7 @@ import type {
 import type { MessageKey, Translator } from "../core/i18n";
 import { codePointLabel, firstGrapheme, graphemeWidth, graphemes } from "../core/unicode";
 import { CanvasRenderer, type RenderViewState } from "../render/renderer";
-import { renderElement, renderCells, type RenderElementOptions } from "../model/rasterize";
+import { renderElement, type RenderElementOptions } from "../model/rasterize";
 import { drawEllipse } from "../glyphs/shapes";
 import { drawingToMarkdown } from "../core/format";
 import { copyTextToClipboard } from "../render/export-image";
@@ -174,8 +167,6 @@ type Gesture =
       moved?: boolean;
     };
 
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 4;
 const HANDLE_HIT = 9;
 const PASTE_OFFSET = 2;
 
@@ -200,10 +191,6 @@ function boundsToBox(bounds: { x: number; y: number; w: number; h: number }): Se
   return boxFromBounds(bounds.x, bounds.y, bounds.w, bounds.h);
 }
 
-function boxToBounds(box: SelectionRect): { x: number; y: number; w: number; h: number } {
-  return { x: box.c0, y: box.r0, w: box.c1 - box.c0 + 1, h: box.r1 - box.r0 + 1 };
-}
-
 function contains(box: SelectionRect, row: number, col: number): boolean {
   return row >= box.r0 && row <= box.r1 && col >= box.c0 && col <= box.c1;
 }
@@ -221,10 +208,6 @@ function isTypingTarget(target: EventTarget | null): boolean {
     el.tagName === "SELECT" ||
     el.isContentEditable
   );
-}
-
-function isMac(): boolean {
-  return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
 }
 
 function modKey(e: KeyboardEvent | MouseEvent | PointerEvent): boolean {
@@ -270,10 +253,8 @@ export class Editor {
   private clipboard: DrawingObject[] = [];
   private spaceDown = false;
   private preSpaceTool: ToolId | null = null;
-  private suppressSave = false;
   private saveState: EditorStatus["saveState"] = "saved";
   private abort = new AbortController();
-  private fittedOnce = false;
 
   constructor(options: EditorOptions) {
     this.stage = options.stage;
@@ -387,12 +368,11 @@ export class Editor {
     const active = getActiveLayer(this.data) ?? this.data.layers[0];
     if (active) ensureGlobalDoodle(active);
     this.selectedLayers.add(this.data.activeLayerId);
-    this.fittedOnce = false;
+    this.syncLinkedLines();
     this.composed = composeData(this.data);
     this.refresh(false);
     window.requestAnimationFrame(() => {
       this.fitView();
-      this.fittedOnce = true;
     });
   }
 
@@ -581,47 +561,9 @@ export class Editor {
     this.refresh(false);
   }
 
-  setStrokeStyle(style: StrokeStyle): void {
-    this.strokeStyle = style;
-    this.applyToStylebar();
-  }
-
-  getStrokeStyle(): StrokeStyle {
-    return this.strokeStyle;
-  }
-
-  setRoute(route: LineRoute): void {
-    this.route = route;
-    this.applyToStylebar();
-  }
-
-  getRoute(): LineRoute {
-    return this.route;
-  }
-
-  setArrowStyles(start: ArrowStyle, end: ArrowStyle): void {
-    this.arrowStartStyle = start;
-    this.arrowEndStyle = end;
-    this.applyToStylebar();
-  }
-
-  setArrowStartStyle(style: ArrowStyle): void {
-    this.arrowStartStyle = style;
-    this.applyToStylebar();
-  }
-
-  setArrowEndStyle(style: ArrowStyle): void {
-    this.arrowEndStyle = style;
-    this.applyToStylebar();
-  }
-
-  getArrowStyles(): { start: ArrowStyle; end: ArrowStyle } {
-    return { start: this.arrowStartStyle, end: this.arrowEndStyle };
-  }
-
   setDrawChar(ch: string): void {
     this.drawChar = firstGrapheme(ch) || "█";
-    this.applyToStylebar();
+    this.refresh(false);
   }
 
   getDrawChar(): string {
@@ -630,48 +572,18 @@ export class Editor {
 
   setFillChar(ch: string): void {
     this.fillChar = firstGrapheme(ch) || "█";
-    this.applyToStylebar();
+    this.refresh(false);
   }
 
   getFillChar(): string {
     return this.fillChar;
   }
 
-  setTextFont(font: TextTransform): void {
-    this.textFont = font;
-    this.applyToStylebar();
-  }
-
-  getTextFont(): TextTransform {
-    return this.textFont;
-  }
-
-  setGrid(mode: GridMode): void {
-    this.settings.grid = mode;
-    this.renderer.setSettings(this.settings);
-    this.applyToStylebar();
-    this.hooks.settingsChanged?.();
-  }
-
-  getGrid(): GridMode {
-    return this.settings.grid;
-  }
-
   toggleGrid(): void {
-    this.setGrid(this.settings.grid === "none" ? "lines" : "none");
-  }
-
-  setGridSize(size: number): void {
-    const allowed = [4, 8, 12, 16];
-    this.settings.fontSize = allowed.includes(size) ? size : 12;
+    this.settings.grid = this.settings.grid === "none" ? "lines" : "none";
     this.renderer.setSettings(this.settings);
+    this.refresh(false);
     this.hooks.settingsChanged?.();
-    this.refresh(false);
-    window.requestAnimationFrame(() => this.renderer.fit());
-  }
-
-  private applyToStylebar(): void {
-    this.refresh(false);
   }
 
   // ----------------------------------------------------------------- history
@@ -687,13 +599,7 @@ export class Editor {
     this.redoStack = [];
   }
 
-  private change(fn: () => void, options: { save?: boolean } = {}): void {
-    const before = this.snapshot();
-    fn();
-    this.pushHistory(before);
-    this.refresh();
-    if (options.save !== false) this.hooks.requestSave();
-  }
+
 
   undo(): void {
     if (this.undoStack.length === 0) {
@@ -726,6 +632,7 @@ export class Editor {
     this.selection.clear();
     this.selectedLayers.clear();
     this.selectedLayers.add(this.data.activeLayerId);
+    this.syncLinkedLines();
     this.refresh();
   }
 
@@ -1041,6 +948,100 @@ export class Editor {
     this.hooks.requestSave();
   }
 
+  private findGroupById(id: string): GroupObject | null {
+    const visit = (groups: DrawingObject[]): GroupObject | null => {
+      for (const object of groups) {
+        if (object.kind !== "group") continue;
+        if (object.id === id) return object;
+        const nested = visit(object.children);
+        if (nested) return nested;
+      }
+      return null;
+    };
+    for (const layer of this.data.layers) {
+      const found = visit(layer.objects);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  private findGroupChild(id: string): { parent: GroupObject; object: DrawingObject; index: number } | null {
+    const visit = (groups: DrawingObject[]): { parent: GroupObject; object: DrawingObject; index: number } | null => {
+      for (const object of groups) {
+        if (object.kind !== "group") continue;
+        const index = object.children.findIndex((child) => child.id === id);
+        if (index >= 0) return { parent: object, object: object.children[index], index };
+        const nested = visit(object.children);
+        if (nested) return nested;
+      }
+      return null;
+    };
+    for (const layer of this.data.layers) {
+      const found = visit(layer.objects);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  renameGroup(id: string, name: string): void {
+    const group = this.findGroupById(id);
+    if (!group) return;
+    const next = name.trim().slice(0, 80);
+    if ((group.name ?? "") === next) return;
+    const before = this.snapshot();
+    group.name = next || undefined;
+    this.pushHistory(before);
+    this.refresh();
+    this.hooks.requestSave();
+  }
+
+  setGroupRenderMode(id: string, mode: "separate" | "merge"): void {
+    const group = this.findGroupById(id);
+    if (!group || (group.renderMode ?? "separate") === mode) return;
+    const before = this.snapshot();
+    group.renderMode = mode;
+    this.pushHistory(before);
+    this.refresh();
+    this.hooks.requestSave();
+  }
+
+  setChildElementVisible(id: string, visible: boolean): void {
+    const found = this.findGroupChild(id);
+    if (!found) return;
+    const before = this.snapshot();
+    found.object.visible = visible;
+    if (visible) found.object.hidden = false;
+    this.pushHistory(before);
+    this.refresh();
+    this.hooks.requestSave();
+  }
+
+  setChildElementLocked(id: string, locked: boolean): void {
+    const found = this.findGroupChild(id);
+    if (!found) return;
+    const before = this.snapshot();
+    found.object.locked = locked;
+    this.pushHistory(before);
+    this.refresh();
+    this.hooks.requestSave();
+  }
+
+  reorderGroupChild(groupId: string, sourceId: string, targetId: string, above: boolean): void {
+    if (sourceId === targetId) return;
+    const group = this.findGroupById(groupId);
+    if (!group) return;
+    const sourceIndex = group.children.findIndex((child) => child.id === sourceId);
+    const targetIndex = group.children.findIndex((child) => child.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const before = this.snapshot();
+    const [source] = group.children.splice(sourceIndex, 1);
+    const nextTarget = group.children.findIndex((child) => child.id === targetId);
+    group.children.splice(nextTarget + (above ? 1 : 0), 0, source);
+    this.pushHistory(before);
+    this.refresh();
+    this.hooks.requestSave();
+  }
+
   setElementLocked(id: string, locked: boolean): void {
     const found = findObject(this.data, id);
     if (!found) return;
@@ -1207,6 +1208,7 @@ export class Editor {
       return;
     }
     this.selection.clear();
+    this.syncLinkedLines();
     this.pushHistory(before);
     this.refresh();
     this.hooks.requestSave();
@@ -1309,6 +1311,7 @@ export class Editor {
     if (dx === 0 && dy === 0) return;
     const before = this.snapshot();
     for (const { object } of selected) translateObject(object, dy, dx);
+    this.syncLinkedLines(new Set(selected.filter(({ object }) => object.kind !== "line").map(({ object }) => object.id)));
     this.pushHistory(before);
     this.refresh();
     this.hooks.requestSave();
@@ -1334,6 +1337,7 @@ export class Editor {
       else if (align === "vcenter") dy = Math.round(union.y + (union.h - b.h) / 2 - b.y);
       if (dx || dy) translateObject(object, dy, dx);
     }
+    this.syncLinkedLines(new Set(selected.filter(({ object }) => object.kind !== "line").map(({ object }) => object.id)));
     this.pushHistory(before);
     this.refresh();
     this.hooks.requestSave();
@@ -1362,6 +1366,7 @@ export class Editor {
       translateObject(item.entry.object, axis === "vertical" ? delta : 0, axis === "horizontal" ? delta : 0);
       cursor += (axis === "horizontal" ? item.bounds.w : item.bounds.h) + gap;
     }
+    this.syncLinkedLines(new Set(entries.filter(({ entry }) => entry.object.kind !== "line").map(({ entry }) => entry.object.id)));
     this.pushHistory(before);
     this.refresh();
     this.hooks.requestSave();
@@ -1384,27 +1389,122 @@ export class Editor {
     this.hooks.requestSave();
   }
 
-  setSelectedLineStyle(style: StrokeStyle): void {
+  setSelectedLineStyleMode(mode: "thin" | "bold" | "double" | "filled" | "ascii"): void {
     this.updateSelectedObjects((object) => {
       if (object.kind !== "line") return false;
-      object.style = style;
+      object.lineStyle = mode;
+      if (mode === "thin") object.style = "light";
+      else if (mode === "bold") object.style = "heavy";
+      else if (mode === "double") object.style = "double";
+      else if (mode === "ascii") object.style = "ascii";
       return true;
     });
   }
 
-  setSelectedLineRoute(route: LineRoute): void {
+  setSelectedLinePattern(pattern: "solid" | "dash2" | "dash3" | "dash4"): void {
     this.updateSelectedObjects((object) => {
       if (object.kind !== "line") return false;
-      object.route = route;
+      object.linePattern = pattern;
       return true;
     });
   }
 
-  setSelectedArrow(which: "start" | "end", style: ArrowStyle): void {
+  setSelectedLineFillChar(ch: string): void {
     this.updateSelectedObjects((object) => {
       if (object.kind !== "line") return false;
-      if (which === "start") object.arrowStart = style;
-      else object.arrowEnd = style;
+      object.lineFillChar = firstGrapheme(ch) || "█";
+      object.lineStyle = "filled";
+      return true;
+    });
+  }
+
+  setSelectedLineRouting(routing: "4way" | "8way"): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "line") return false;
+      object.routing = routing;
+      return true;
+    });
+  }
+
+  setSelectedLineIgnoreShapes(mode: "all" | "none" | "exceptTargets"): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "line") return false;
+      object.ignoreShapes = mode;
+      return true;
+    });
+  }
+
+  setSelectedLineInterruptEnabled(enabled: boolean): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "line") return false;
+      object.interruptEnabled = enabled;
+      if (enabled && !object.interrupt) object.interrupt = { segment: 2, gap: 2, offset: 0 };
+      return true;
+    });
+  }
+
+  setSelectedLineInterruptValue(key: "segment" | "gap" | "offset", value: number): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "line") return false;
+      if (!object.interrupt) object.interrupt = { segment: 2, gap: 2, offset: 0 };
+      if (key === "offset") object.interrupt.offset = clamp(Math.round(value), 0, 9999);
+      else object.interrupt[key] = clamp(Math.round(value), 1, 999);
+      object.interruptEnabled = true;
+      return true;
+    });
+  }
+
+  setSelectedLineArrowMode(which: "start" | "end", mode: "adaptive" | "custom"): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "line") return false;
+      if (which === "start") {
+        object.arrowStartMode = mode;
+        if (object.arrowStart === "none") object.arrowStart = "line";
+        object.arrowStartChar = object.arrowStartChar || "←";
+      } else {
+        object.arrowEndMode = mode;
+        if (object.arrowEnd === "none") object.arrowEnd = "line";
+        object.arrowEndChar = object.arrowEndChar || "→";
+      }
+      return true;
+    });
+  }
+
+  setSelectedLineArrowChar(which: "start" | "end", ch: string): void {
+    const char = firstGrapheme(ch);
+    if (!char) return;
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "line") return false;
+      if (which === "start") {
+        object.arrowStartMode = "custom";
+        object.arrowStart = object.arrowStart === "none" ? "line" : object.arrowStart;
+        object.arrowStartChar = char;
+      } else {
+        object.arrowEndMode = "custom";
+        object.arrowEnd = object.arrowEnd === "none" ? "line" : object.arrowEnd;
+        object.arrowEndChar = char;
+      }
+      return true;
+    });
+  }
+
+  setSelectedLineArrowToggle(which: "start" | "end", enabled: boolean): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "line") return false;
+      if (enabled) {
+        const current = which === "start" ? this.arrowStartStyle : this.arrowEndStyle;
+        const style = current === "none" ? "line" : current;
+        if (which === "start") {
+          object.arrowStart = style;
+          object.arrowStartMode = object.arrowStartMode ?? "adaptive";
+          object.arrowStartChar = object.arrowStartChar || "←";
+        } else {
+          object.arrowEnd = style;
+          object.arrowEndMode = object.arrowEndMode ?? "adaptive";
+          object.arrowEndChar = object.arrowEndChar || "→";
+        }
+      } else if (which === "start") object.arrowStart = "none";
+      else object.arrowEnd = "none";
       return true;
     });
   }
@@ -1544,14 +1644,6 @@ export class Editor {
     });
   }
 
-  setSelectedTextFont(font: TextTransform): void {
-    this.updateSelectedObjects((object) => {
-      if (!this.isTextLabel(object)) return false;
-      object.font = font;
-      return true;
-    });
-  }
-
   setSelectedTextAlign(hAlign: TextAlignH): void {
     this.updateSelectedObjects((object) => {
       if (!this.isTextLabel(object)) return false;
@@ -1603,132 +1695,8 @@ export class Editor {
     });
   }
 
-  // ------------------------------------------------------------------- layers
-
-  getLayers(): Layer[] {
-    return this.data.layers;
-  }
-
   getActiveLayer(): Layer | null {
     return getActiveLayer(this.data);
-  }
-
-  getSelectedLayerIds(): string[] {
-    return Array.from(this.selectedLayers);
-  }
-
-  selectLayer(id: string, additive = false): void {
-    const layer = getLayer(this.data, id);
-    if (!layer) return;
-    this.data.activeLayerId = id;
-    if (additive) {
-      if (this.selectedLayers.has(id)) this.selectedLayers.delete(id);
-      else this.selectedLayers.add(id);
-    } else {
-      this.selectedLayers = new Set([id]);
-    }
-    this.refresh(false);
-    this.hooks.statusChanged();
-  }
-
-  addLayer(): void {
-    this.change(() => {
-      const layer = addLayerToData(this.data);
-      this.selectedLayers = new Set([layer.id]);
-      this.selection.clear();
-    });
-  }
-
-  deleteLayer(id: string): void {
-    if (this.data.layers.length <= 1) return;
-    const before = this.snapshot();
-    const index = this.data.layers.findIndex((layer) => layer.id === id);
-    if (index < 0) return;
-    const layer = this.data.layers[index];
-    for (const object of layer.objects) this.selection.delete(object.id);
-    this.data.layers.splice(index, 1);
-    if (this.data.activeLayerId === id) {
-      const next = this.data.layers[Math.min(index, this.data.layers.length - 1)];
-      this.data.activeLayerId = next.id;
-    }
-    this.selectedLayers.delete(id);
-    if (this.selectedLayers.size === 0) this.selectedLayers.add(this.data.activeLayerId);
-    this.pushHistory(before);
-    this.refresh();
-    this.hooks.requestSave();
-  }
-
-  renameLayer(id: string, name: string): void {
-    const layer = getLayer(this.data, id);
-    if (!layer) return;
-    const value = name.trim().slice(0, 60);
-    if (!value || value === layer.name) return;
-    this.change(() => {
-      layer.name = value;
-    });
-  }
-
-  toggleLayerVisibility(id: string): void {
-    const layer = getLayer(this.data, id);
-    if (!layer) return;
-    const before = this.snapshot();
-    layer.visible = !layer.visible;
-    if (!layer.visible) {
-      for (const object of layer.objects) this.selection.delete(object.id);
-    }
-    this.pushHistory(before);
-    this.refresh();
-    this.hooks.requestSave();
-  }
-
-  toggleLayerLock(id: string): void {
-    const layer = getLayer(this.data, id);
-    if (!layer) return;
-    const before = this.snapshot();
-    layer.locked = !layer.locked;
-    if (layer.locked) {
-      for (const object of layer.objects) this.selection.delete(object.id);
-    }
-    this.pushHistory(before);
-    this.refresh();
-    this.hooks.requestSave();
-  }
-
-  moveLayer(id: string, direction: -1 | 1): void {
-    const index = this.data.layers.findIndex((layer) => layer.id === id);
-    const next = index + direction;
-    if (index < 0 || next < 0 || next >= this.data.layers.length) return;
-    this.change(() => {
-      const [layer] = this.data.layers.splice(index, 1);
-      this.data.layers.splice(next, 0, layer);
-    });
-  }
-
-  mergeLayers(ids: string[], intoNew = false): void {
-    const check = canMergeLayers(this.data, ids);
-    if (!check.ok) {
-      this.hooks.notify(check.reason === "locked" ? "notice.layerLocked" : "notice.selectLayer");
-      return;
-    }
-    const before = this.snapshot();
-    const result = mergeLayersInData(this.data, ids, intoNew);
-    if (!result) return;
-    this.selection.clear();
-    this.selectedLayers = new Set([result.targetLayerId]);
-    this.pushHistory(before);
-    this.refresh();
-    this.hooks.requestSave();
-    this.hooks.notify("notice.layerMerged", { count: result.mergedCount });
-  }
-
-  setMinCanvas(cols: number, rows: number): void {
-    const c = clamp(Math.round(cols), 4, 1200);
-    const r = clamp(Math.round(rows), 4, 800);
-    if (c === this.data.minCols && r === this.data.minRows) return;
-    this.change(() => {
-      this.data.minCols = c;
-      this.data.minRows = r;
-    });
   }
 
   // -------------------------------------------------------------------- text
@@ -2023,6 +1991,16 @@ export class Editor {
         route: this.route,
         arrowStart: this.arrowStartStyle,
         arrowEnd: erase ? (this.arrowEndStyle === "none" ? "line" : this.arrowEndStyle) : this.arrowEndStyle,
+        arrowStartMode: "adaptive",
+        arrowEndMode: "adaptive",
+        arrowStartChar: "←",
+        arrowEndChar: "→",
+        routing: this.route === "elbow" ? "4way" : "8way",
+        lineStyle: this.strokeStyle === "heavy" ? "bold" : this.strokeStyle === "double" ? "double" : this.strokeStyle === "ascii" ? "ascii" : "thin",
+        linePattern: "solid",
+        lineFillChar: this.fillChar,
+        interruptEnabled: false,
+        ignoreShapes: "none",
       };
       layer.objects.push(object);
       this.gesture = { type: "shape", before, object, start, current: start, mode: "line", erase, changed: false };
@@ -2271,6 +2249,11 @@ export class Editor {
       }
       if (!already) {
         this.selection = new Set([hit.object.id]);
+        this.data.activeLayerId = hit.layer.id;
+        this.selectedLayers = new Set([hit.layer.id]);
+        // A first click only selects; movement begins on the next drag.
+        this.refresh(false);
+        return;
       }
       this.data.activeLayerId = hit.layer.id;
       this.selectedLayers = new Set([hit.layer.id]);
@@ -2529,6 +2512,7 @@ export class Editor {
       this.refresh(false);
       return;
     }
+    if (line) this.linkLineTargets(line);
     if (this.finishDoodleMerge(gesture.object, gesture.before)) return;
     if ((gesture.object as DrawingObject).kind === "cells" && (gesture.object as unknown as CellsObject).role === "erase") this.pruneErasedElements();
     this.pushHistory(gesture.before);
@@ -2536,6 +2520,9 @@ export class Editor {
     else this.selection.clear();
     this.refresh();
     this.hooks.requestSave();
+    if (!gesture.erase && (this.tool === "line" || this.tool === "rect" || this.tool === "diamond")) {
+      this.setTool("select");
+    }
   }
 
   private finishCircle(gesture: Extract<Gesture, { type: "circle" }>, e: PointerEvent): void {
@@ -2555,6 +2542,7 @@ export class Editor {
     else this.selection.clear();
     this.refresh();
     this.hooks.requestSave();
+    if (!gesture.erase && this.tool === "circle") this.setTool("select");
   }
 
   private finishMarquee(gesture: Extract<Gesture, { type: "marquee" }>, e: PointerEvent): void {
@@ -2713,6 +2701,13 @@ export class Editor {
       if (index >= 0) layer.objects[index] = found.object;
       translateObject(found.object, dy, dx);
     }
+    const targetIds = new Set(gesture.originals.filter((entry) => entry.object.kind !== "line").map((entry) => entry.id));
+    this.syncLinkedLines(targetIds);
+    for (const original of gesture.originals) {
+      if (original.object.kind !== "line") continue;
+      const found = findObject(this.data, original.id);
+      if (found && found.object.kind === "line") this.linkLineTargets(found.object, false);
+    }
     this.refresh(false);
   }
 
@@ -2801,7 +2796,119 @@ export class Editor {
       }
       layer.objects[index] = found.object;
     }
+    const targetIds = new Set(gesture.originals.filter((entry) => entry.object.kind !== "line").map((entry) => entry.id));
+    this.syncLinkedLines(targetIds);
+    for (const original of gesture.originals) {
+      if (original.object.kind !== "line") continue;
+      const found = findObject(this.data, original.id);
+      if (found && found.object.kind === "line") this.linkLineTargets(found.object, false);
+    }
     this.refresh(false);
+  }
+
+  private linkTargetAt(cell: CellPos, ignoreId?: string): DrawingObject | null {
+    for (let li = this.data.layers.length - 1; li >= 0; li--) {
+      const layer = this.data.layers[li];
+      if (!layer.visible) continue;
+      for (let oi = layer.objects.length - 1; oi >= 0; oi--) {
+        const object = layer.objects[oi];
+        if (object.id === ignoreId || object.global === true || !isElementVisible(object)) continue;
+        if (object.kind !== "rect" && object.kind !== "circle" && object.kind !== "diamond" && object.kind !== "group") continue;
+        const bounds = objectBounds(object);
+        if (!bounds) continue;
+        if (
+          cell.col >= bounds.x - 1 &&
+          cell.col <= bounds.x + bounds.w &&
+          cell.row >= bounds.y - 1 &&
+          cell.row <= bounds.y + bounds.h
+        ) return object;
+      }
+    }
+    return null;
+  }
+
+  private linkLineTargets(line: LineObject, snap = true): void {
+    const start = this.linkTargetAt({ row: line.y1, col: line.x1 }, line.id);
+    const end = this.linkTargetAt({ row: line.y2, col: line.x2 }, line.id);
+    if (line.startTargetId !== start?.id) {
+      line.startAnchor = undefined;
+      line.startAnchorOffset = undefined;
+    }
+    if (line.endTargetId !== end?.id) {
+      line.endAnchor = undefined;
+      line.endAnchorOffset = undefined;
+    }
+    line.startTargetId = start?.id;
+    line.endTargetId = end?.id;
+    if (!snap) return;
+    if (start) this.snapLinkedEndpoint(line, "start", start);
+    if (end) this.snapLinkedEndpoint(line, "end", end);
+  }
+
+  private snapLinkedEndpoint(line: LineObject, which: "start" | "end", target: DrawingObject): void {
+    const bounds = objectBounds(target);
+    if (!bounds) return;
+    let row = which === "start" ? line.y1 : line.y2;
+    let col = which === "start" ? line.x1 : line.x2;
+    const left = bounds.x;
+    const right = bounds.x + bounds.w - 1;
+    const top = bounds.y;
+    const bottom = bounds.y + bounds.h - 1;
+    let anchor = which === "start" ? line.startAnchor : line.endAnchor;
+    let anchorOffset = which === "start" ? line.startAnchorOffset : line.endAnchorOffset;
+    if (!anchor || anchorOffset === undefined) {
+      const distances = [col - left, right - col, row - top, bottom - row];
+      const nearest = Math.min(...distances);
+      if (nearest === distances[0]) anchor = "left";
+      else if (nearest === distances[1]) anchor = "right";
+      else if (nearest === distances[2]) anchor = "top";
+      else anchor = "bottom";
+      anchorOffset = anchor === "left" || anchor === "right" ? row - top : col - left;
+    }
+    if (anchor === "left") {
+      col = left;
+      row = top + anchorOffset;
+    } else if (anchor === "right") {
+      col = right;
+      row = top + anchorOffset;
+    } else if (anchor === "top") {
+      row = top;
+      col = left + anchorOffset;
+    } else {
+      row = bottom;
+      col = left + anchorOffset;
+    }
+    row = Math.max(top, Math.min(bottom, row));
+    col = Math.max(left, Math.min(right, col));
+    if (which === "start") {
+      line.x1 = col;
+      line.y1 = row;
+      line.startAnchor = anchor;
+      line.startAnchorOffset = anchor === "left" || anchor === "right" ? row - top : col - left;
+    } else {
+      line.x2 = col;
+      line.y2 = row;
+      line.endAnchor = anchor;
+      line.endAnchorOffset = anchor === "left" || anchor === "right" ? row - top : col - left;
+    }
+  }
+
+  private syncLinkedLines(targetIds?: Set<string>): void {
+    for (const object of allObjects(this.data)) {
+      if (object.kind !== "line") continue;
+      for (const which of ["start", "end"] as const) {
+        const id = which === "start" ? object.startTargetId : object.endTargetId;
+        if (!id) continue;
+        if (targetIds && !targetIds.has(id)) continue;
+        const target = findObject(this.data, id);
+        if (!target) {
+          if (which === "start") object.startTargetId = undefined;
+          else object.endTargetId = undefined;
+          continue;
+        }
+        this.snapLinkedEndpoint(object, which, target.object);
+      }
+    }
   }
 
   // ------------------------------------------------------------------ hit test
@@ -3155,9 +3262,9 @@ export class Editor {
 
   private updateCursor(): void {
     const canvas = this.renderer.canvas;
-    if (this.tool === "hand") canvas.style.cursor = "grab";
-    else if (this.tool === "select") canvas.style.cursor = "default";
-    else canvas.style.cursor = "crosshair";
+    canvas.classList.toggle("is-cursor-grab", this.tool === "hand");
+    canvas.classList.toggle("is-cursor-default", this.tool === "select");
+    canvas.classList.toggle("is-cursor-crosshair", this.tool !== "hand" && this.tool !== "select");
   }
 
   // --------------------------------------------------------------- keyboard

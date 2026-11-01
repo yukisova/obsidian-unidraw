@@ -1,40 +1,17 @@
 import { DrawingDocument, WIDE_CONT } from "../core/document";
-import type { CellPos, ArrowStyle, LineRoute, StrokeStyle, TextAlignH, TextAlignV, TextDirection, TextTransform, TextWrapMode } from "../core/types";
+import type { CellPos, StrokeStyle, TextAlignH, TextAlignV, TextDirection, TextTransform, TextWrapMode } from "../core/types";
 import { graphemeWidth, graphemes } from "../core/unicode";
-import type { CircleObject, DiamondObject, GroupObject, LineObject, Padding, RectObject, CellsObject } from "../core/objects";
+import type { CircleObject, DiamondObject, LineObject, Padding, RectObject, CellsObject } from "../core/objects";
 import { getShapeFill, isElementVisible } from "../core/objects";
 import { diagonalGlyph, paintMask } from "../glyphs/box";
 import { drawDiamond, drawEllipse, drawRectangle } from "../glyphs/shapes";
+import { computeLinePath, type LineObstacle } from "./line-path";
 import { transformText } from "../glyphs/text-styles";
 
 export const FILL_CLEAR = "\uE000";
 
-type Dir = "N" | "E" | "S" | "W" | "NE" | "SE" | "SW" | "NW";
-
-const ARROW_CHARS: Record<Exclude<ArrowStyle, "none">, Record<Dir, string>> = {
-  line: { N: "↑", E: "→", S: "↓", W: "←", NE: "↗", SE: "↘", SW: "↙", NW: "↖" },
-  hollow: { N: "△", E: "▷", S: "▽", W: "◁", NE: "⇗", SE: "⇘", SW: "⇙", NW: "⇖" },
-  solid: { N: "▲", E: "▶", S: "▼", W: "◀", NE: "⬈", SE: "⬊", SW: "⬋", NW: "⬉" },
-};
-
 function sign(n: number): number {
   return n === 0 ? 0 : n > 0 ? 1 : -1;
-}
-
-function dirFromDelta(dr: number, dc: number): Dir {
-  if (dr < 0 && dc > 0) return "NE";
-  if (dr > 0 && dc > 0) return "SE";
-  if (dr > 0 && dc < 0) return "SW";
-  if (dr < 0 && dc < 0) return "NW";
-  if (dr < 0) return "N";
-  if (dr > 0) return "S";
-  if (dc > 0) return "E";
-  return "W";
-}
-
-function arrowChar(style: ArrowStyle, dr: number, dc: number): string | null {
-  if (style === "none") return null;
-  return ARROW_CHARS[style][dirFromDelta(dr, dc)];
 }
 
 function put(doc: DrawingDocument, r: number, c: number, ch: string): void {
@@ -42,241 +19,109 @@ function put(doc: DrawingDocument, r: number, c: number, ch: string): void {
   doc.setGlyph(r, c, ch, true);
 }
 
-function paintAxisPath(doc: DrawingDocument, points: CellPos[], style: StrokeStyle): void {
-  if (points.length === 0) return;
-  if (points.length === 1) {
-    paintMask(doc, points[0].row, points[0].col, 0, style);
-    return;
-  }
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const prev = points[i - 1];
-    const next = points[i + 1];
-    let mask = 0;
-    if (prev) {
-      const dr = sign(prev.row - p.row);
-      const dc = sign(prev.col - p.col);
-      if (dr < 0) mask |= 1;
-      if (dc > 0) mask |= 2;
-      if (dr > 0) mask |= 4;
-      if (dc < 0) mask |= 8;
-    }
-    if (next) {
-      const dr = sign(next.row - p.row);
-      const dc = sign(next.col - p.col);
-      if (dr < 0) mask |= 1;
-      if (dc > 0) mask |= 2;
-      if (dr > 0) mask |= 4;
-      if (dc < 0) mask |= 8;
-    }
-    if (mask) paintMask(doc, p.row, p.col, mask, style);
-  }
+const CARDINAL_ARROWS: Record<"N" | "E" | "S" | "W", string> = {
+  N: "↑",
+  E: "→",
+  S: "↓",
+  W: "←",
+};
+
+function adaptiveLineArrow(dr: number, dc: number, fallback: "←" | "→"): string {
+  if (dr === 0 && dc === 0) return fallback;
+  if (Math.abs(dr) >= Math.abs(dc)) return dr < 0 ? CARDINAL_ARROWS.N : CARDINAL_ARROWS.S;
+  return dc < 0 ? CARDINAL_ARROWS.W : CARDINAL_ARROWS.E;
 }
 
-function plotPath(
-  doc: DrawingDocument,
-  points: CellPos[],
-  style: StrokeStyle,
-  options: { diagonal?: boolean } = {},
-): void {
-  if (points.length === 0) return;
-  if (options.diagonal) {
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i];
-      const next = points[i + 1] ?? points[i - 1];
-      if (!next) continue;
-      const dr = sign(next.row - p.row);
-      const dc = sign(next.col - p.col);
-      if (dr !== 0 && dc !== 0) put(doc, p.row, p.col, diagonalGlyph(dr, dc, style));
-      else {
-        let mask = 0;
-        if (dr < 0) mask |= 1;
-        if (dc > 0) mask |= 2;
-        if (dr > 0) mask |= 4;
-        if (dc < 0) mask |= 8;
-        if (mask) paintMask(doc, p.row, p.col, mask, style);
-      }
-    }
-    return;
-  }
-  paintAxisPath(doc, points, style);
-}
-
-function diagonalSegment(a: CellPos, steps: number, sr: number, sc: number): CellPos[] {
-  const points: CellPos[] = [];
-  for (let i = 0; i <= steps; i++) points.push({ row: a.row + sr * i, col: a.col + sc * i });
-  return points;
-}
-
-function horizontalSegment(a: CellPos, count: number): CellPos[] {
-  const points: CellPos[] = [];
-  const sc = sign(count);
-  for (let i = 0; i <= Math.abs(count); i++) points.push({ row: a.row, col: a.col + sc * i });
-  return points;
-}
-
-function verticalSegment(a: CellPos, count: number): CellPos[] {
-  const points: CellPos[] = [];
-  const sr = sign(count);
-  for (let i = 0; i <= Math.abs(count); i++) points.push({ row: a.row + sr * i, col: a.col });
-  return points;
-}
-
-/** Bresenham line points (one cell per major-axis step). */
-function bresenhamLine(a: CellPos, b: CellPos): CellPos[] {
-  const points: CellPos[] = [];
-  let x0 = a.col;
-  let y0 = a.row;
-  const x1 = b.col;
-  const y1 = b.row;
-  const dx = Math.abs(x1 - x0);
-  const dy = Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1;
-  const sy = y0 < y1 ? 1 : -1;
-  let err = dx - dy;
-  for (;;) {
-    points.push({ row: y0, col: x0 });
-    if (x0 === x1 && y0 === y1) break;
-    const e2 = 2 * err;
-    if (e2 > -dy) {
-      err -= dy;
-      x0 += sx;
-    }
-    if (e2 < dx) {
-      err += dx;
-      y0 += sy;
-    }
-  }
-  return points;
-}
-
-function plotStraight(doc: DrawingDocument, a: CellPos, b: CellPos, style: StrokeStyle): void {
-  const points = bresenhamLine(a, b);
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const next = points[i + 1];
-    const prev = points[i - 1];
-    const step = next ?? p;
-    const dr = sign(step.row - p.row);
-    const dc = sign(step.col - p.col);
-    if (dr !== 0 && dc !== 0) {
-      put(doc, p.row, p.col, diagonalGlyph(dr, dc, style));
-      continue;
-    }
-    let mask = 0;
-    if (prev) {
-      const pdr = sign(prev.row - p.row);
-      const pdc = sign(prev.col - p.col);
-      if (pdr < 0) mask |= 1;
-      if (pdc > 0) mask |= 2;
-      if (pdr > 0) mask |= 4;
-      if (pdc < 0) mask |= 8;
-    }
-    if (next) {
-      const ndr = sign(next.row - p.row);
-      const ndc = sign(next.col - p.col);
-      if (ndr < 0) mask |= 1;
-      if (ndc > 0) mask |= 2;
-      if (ndr > 0) mask |= 4;
-      if (ndc < 0) mask |= 8;
-    }
-    if (mask) paintMask(doc, p.row, p.col, mask, style);
-  }
-}
-
-function lineEndpoints(obj: LineObject): [CellPos, CellPos] {
-  return [
-    { row: obj.y1, col: obj.x1 },
-    { row: obj.y2, col: obj.x2 },
-  ];
-}
-
-function applyArrow(
+function applyLineArrow(
   doc: DrawingDocument,
   cell: CellPos,
-  style: ArrowStyle,
+  obj: LineObject,
+  which: "start" | "end",
   dr: number,
   dc: number,
 ): void {
-  const ch = arrowChar(style, dr, dc);
-  if (ch) put(doc, cell.row, cell.col, ch);
+  const enabled = which === "start" ? obj.arrowStart !== "none" : obj.arrowEnd !== "none";
+  if (!enabled) return;
+  const mode = which === "start" ? obj.arrowStartMode ?? "adaptive" : obj.arrowEndMode ?? "adaptive";
+  if (mode === "custom") {
+    const ch = which === "start" ? obj.arrowStartChar || "←" : obj.arrowEndChar || "→";
+    put(doc, cell.row, cell.col, ch);
+    return;
+  }
+  put(doc, cell.row, cell.col, adaptiveLineArrow(dr, dc, which === "start" ? "←" : "→"));
 }
 
 /** Render a line object, including all three routing modes and arrow styles. */
-export function renderLine(doc: DrawingDocument, obj: LineObject): void {
-  const [start, end] = lineEndpoints(obj);
-  const dr = end.row - start.row;
-  const dc = end.col - start.col;
-  if (dr === 0 && dc === 0) {
-    put(doc, start.row, start.col, "•");
+export function renderLine(doc: DrawingDocument, obj: LineObject, options?: RenderElementOptions): void {
+  const path = computeLinePath(obj, options?.obstacles ?? []);
+  if (path.length === 0) return;
+  const mode = obj.lineStyle ?? (obj.style === "heavy" ? "bold" : obj.style === "double" ? "double" : obj.style === "ascii" ? "ascii" : "thin");
+  const pattern = obj.linePattern ?? "solid";
+  const thinPattern: StrokeStyle = pattern === "dash2" ? "dash2" : pattern === "dash3" ? "dashed" : pattern === "dash4" ? "dash4" : "light";
+  const boldPattern: StrokeStyle = pattern === "dash2" ? "heavyDash2" : pattern === "dash3" ? "heavyDash3" : pattern === "dash4" ? "heavyDash4" : "heavy";
+  const stroke: StrokeStyle = mode === "bold" ? boldPattern : mode === "double" ? "double" : mode === "ascii" ? "ascii" : thinPattern;
+  const config = obj.interruptEnabled === true ? obj.interrupt : undefined;
+  const segment = config ? Math.max(1, Math.round(config.segment)) : 0;
+  const gap = config ? Math.max(1, Math.round(config.gap)) : 0;
+  const offset = config ? Math.max(0, Math.round(config.offset)) : 0;
+  const period = segment + gap;
+  const keep = (index: number): boolean => {
+    if (!config) return true;
+    const phase = ((index - offset) % period + period) % period;
+    return phase < segment;
+  };
+  if (path.length === 1) {
+    const only = path[0];
+    if (obj.arrowStart !== "none") applyLineArrow(doc, only, obj, "start", 0, 0);
+    else if (obj.arrowEnd !== "none") applyLineArrow(doc, only, obj, "end", 0, 0);
+    else put(doc, only.row, only.col, mode === "filled" ? obj.lineFillChar || "█" : "•");
     return;
   }
-  if (obj.route === "elbow") {
-    const horizontalFirst = Math.abs(dc) >= Math.abs(dr);
-    const corner = horizontalFirst
-      ? { row: start.row, col: end.col }
-      : { row: end.row, col: start.col };
-    const first = horizontalFirst
-      ? horizontalSegment(start, corner.col - start.col)
-      : verticalSegment(start, corner.row - start.row);
-    const second = horizontalFirst
-      ? verticalSegment({ row: corner.row, col: corner.col }, end.row - corner.row)
-      : horizontalSegment({ row: corner.row, col: corner.col }, end.col - corner.col);
-    const points = first.concat(second.slice(1));
-    paintAxisPath(doc, points, obj.style);
-    const lastDir = points.length > 1
-      ? [sign(points[points.length - 1].row - points[points.length - 2].row), sign(points[points.length - 1].col - points[points.length - 2].col)]
-      : [sign(dr), sign(dc)];
-    const firstDir = points.length > 1
-      ? [sign(points[0].row - points[1].row), sign(points[0].col - points[1].col)]
-      : [-sign(dr), -sign(dc)];
-    applyArrow(doc, start, obj.arrowStart, firstDir[0], firstDir[1]);
-    applyArrow(doc, end, obj.arrowEnd, lastDir[0], lastDir[1]);
-    return;
-  }
-  if (obj.route === "diagonal") {
-    const d = Math.min(Math.abs(dr), Math.abs(dc));
-    const bend = { row: start.row + sign(dr) * d, col: start.col + sign(dc) * d };
-    const diagonalPoints = diagonalSegment(start, d, sign(dr), sign(dc));
-    plotPath(doc, diagonalPoints, obj.style, { diagonal: true });
-    if (Math.abs(dc) > Math.abs(dr)) {
-      const remainder = horizontalSegment(bend, end.col - bend.col);
-      paintAxisPath(doc, remainder, obj.style);
-    } else if (Math.abs(dr) > Math.abs(dc)) {
-      const remainder = verticalSegment(bend, end.row - bend.row);
-      paintAxisPath(doc, remainder, obj.style);
+  for (let i = 0; i < path.length; i++) {
+    if (!keep(i)) continue;
+    const cell = path[i];
+    if (mode === "filled") {
+      put(doc, cell.row, cell.col, obj.lineFillChar || "█");
+      continue;
     }
-    applyArrow(doc, start, obj.arrowStart, -sign(dr), -sign(dc));
-    if (Math.abs(dc) > Math.abs(dr)) applyArrow(doc, end, obj.arrowEnd, 0, sign(dc));
-    else applyArrow(doc, end, obj.arrowEnd, sign(dr), 0);
-    return;
+    const prev = path[i - 1];
+    const next = path[i + 1];
+    const diagonalNeighbor = prev && (prev.row !== cell.row && prev.col !== cell.col)
+      ? prev
+      : next && (next.row !== cell.row && next.col !== cell.col)
+        ? next
+        : null;
+    if (diagonalNeighbor) {
+      const dr = sign(diagonalNeighbor.row - cell.row);
+      const dc = sign(diagonalNeighbor.col - cell.col);
+      put(doc, cell.row, cell.col, diagonalGlyph(dr, dc, stroke));
+      continue;
+    }
+    let mask = 0;
+    for (const neighbor of [prev, next]) {
+      if (!neighbor) continue;
+      const dr = sign(neighbor.row - cell.row);
+      const dc = sign(neighbor.col - cell.col);
+      if (dr < 0) mask |= 1;
+      if (dc > 0) mask |= 2;
+      if (dr > 0) mask |= 4;
+      if (dc < 0) mask |= 8;
+    }
+    if (mask) paintMask(doc, cell.row, cell.col, mask, stroke);
   }
-  plotStraight(doc, start, end, obj.style);
-  const firstDir = pointsDirection(start, end);
-  if (Math.abs(dr) === 0) {
-    applyArrow(doc, start, obj.arrowStart, 0, -sign(dc));
-    applyArrow(doc, end, obj.arrowEnd, 0, sign(dc));
-  } else if (Math.abs(dc) === 0) {
-    applyArrow(doc, start, obj.arrowStart, -sign(dr), 0);
-    applyArrow(doc, end, obj.arrowEnd, sign(dr), 0);
-  } else {
-    const points = bresenhamLine(start, end);
-    const p0 = points[Math.min(1, points.length - 1)];
-    const p1 = points[points.length - 1];
-    const before = points[Math.max(0, points.length - 2)];
-    applyArrow(doc, start, obj.arrowStart, sign(start.row - p0.row), sign(start.col - p0.col));
-    applyArrow(doc, end, obj.arrowEnd, sign(p1.row - before.row), sign(p1.col - before.col));
-    void firstDir;
-  }
-}
-
-function pointsDirection(a: CellPos, b: CellPos): [number, number] {
-  return [sign(b.row - a.row), sign(b.col - a.col)];
+  const first = path[0];
+  const second = path[1];
+  const beforeLast = path[path.length - 2];
+  const last = path[path.length - 1];
+  applyLineArrow(doc, first, obj, "start", sign(first.row - second.row), sign(first.col - second.col));
+  applyLineArrow(doc, last, obj, "end", sign(last.row - beforeLast.row), sign(last.col - beforeLast.col));
 }
 
 export interface RenderElementOptions {
   /** The text label of this object is hidden while its in-canvas editor is open. */
   skipTextId?: string;
+  /** Full shape bounds used by obstacle-aware line routing. */
+  obstacles?: LineObstacle[];
 }
 
 export function renderRect(
@@ -609,7 +454,13 @@ export function renderElement(
 ): void {
   if (!isElementVisible(object)) return;
   if (object.kind === "group") {
-    for (const child of object.children) renderElement(target, child, options);
+    if (object.renderMode === "merge") {
+      const groupDoc = new DrawingDocument(target.cols, target.rows);
+      for (const child of object.children) renderObject(groupDoc, child, options);
+      overlayNonBlank(groupDoc, target);
+    } else {
+      for (const child of object.children) renderElement(target, child, options);
+    }
     return;
   }
   if (object.kind === "cells") {
@@ -629,7 +480,7 @@ export function renderObject(
   if (!isElementVisible(object)) return;
   switch (object.kind) {
     case "line":
-      renderLine(doc, object);
+      renderLine(doc, object, options);
       break;
     case "rect":
       renderRect(doc, object, options);

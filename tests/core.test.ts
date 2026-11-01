@@ -1,7 +1,7 @@
 import { DrawingDocument, WIDE_CONT } from "../src/core/document";
 import { History } from "../src/core/history";
 import { displayWidth, graphemeWidth, graphemes, normalizeText, codePointLabel } from "../src/core/unicode";
-import { eq, ok, test, text } from "./harness";
+import { eq, ok, test } from "./harness";
 
 test("grapheme segmentation handles flags, emoji and combining marks", () => {
   eq(graphemes("A🇨🇳e\u0301😀").length, 4);

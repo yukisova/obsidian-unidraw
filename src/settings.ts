@@ -75,13 +75,6 @@ function includes<T extends string>(list: readonly T[], value: unknown, fallback
   return typeof value === "string" && (list as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
-const GRID_SIZES = [4, 8, 12, 16];
-
-function nearestGridSize(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_SETTINGS.fontSize;
-  return GRID_SIZES.reduce((best, size) => (Math.abs(size - value) < Math.abs(best - value) ? size : best), 12);
-}
-
 /** Merge stored JSON with defaults, tolerating older or malformed data. */
 export function normalizeSettings(raw: unknown): UnidrawSettings {
   const data = (raw && typeof raw === "object" ? raw : {}) as Partial<UnidrawSettings>;
@@ -93,7 +86,7 @@ export function normalizeSettings(raw: unknown): UnidrawSettings {
       typeof data.fontFamily === "string" && (data.fontFamily in FONT_STACKS || data.fontFamily.length === 0)
         ? data.fontFamily
         : DEFAULT_SETTINGS.fontFamily,
-    fontSize: nearestGridSize(Number(data.fontSize)),
+    fontSize: 16,
     lineHeight: clamp(Number(data.lineHeight), 0.9, 1.8, DEFAULT_SETTINGS.lineHeight),
     grid: includes(GRID_MODES, data.grid, DEFAULT_SETTINGS.grid),
     defaultStroke: includes(STROKE_STYLES, data.defaultStroke, DEFAULT_SETTINGS.defaultStroke),
@@ -136,7 +129,7 @@ export class UnidrawSettingTab extends PluginSettingTab {
     const logo = hero.createEl("pre", { cls: "unidraw-settings-logo" });
     logo.textContent = "╭─────────────────╮\n│  U N I D R A W  │\n╰─────── ✦ ───────╯";
     const heroText = hero.createDiv({ cls: "unidraw-settings-hero-text" });
-    heroText.createEl("h2", { text: this.t("settings.title") });
+    new Setting(heroText).setName(this.t("settings.title")).setHeading();
     heroText.createEl("p", { text: this.t("settings.desc") });
 
     this.renderAppearance(containerEl);
@@ -182,20 +175,6 @@ export class UnidrawSettingTab extends PluginSettingTab {
         dropdown.setValue(this.plugin.settings.fontFamily);
         dropdown.onChange(async (value) => {
           this.plugin.settings.fontFamily = value;
-          await this.commit();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName(this.t("settings.fontSize"))
-      .setDesc(this.t("settings.gridSize.desc"))
-      .addDropdown((dropdown) => {
-        for (const size of GRID_SIZES) {
-          dropdown.addOption(String(size), `${size} px`);
-        }
-        dropdown.setValue(String(this.plugin.settings.fontSize));
-        dropdown.onChange(async (value) => {
-          this.plugin.settings.fontSize = Number(value);
           await this.commit();
         });
       });
@@ -340,8 +319,10 @@ export class UnidrawSettingTab extends PluginSettingTab {
 
   private refreshEmbedStyles(): void {
     document.querySelectorAll<HTMLElement>(".unidraw-embed").forEach((el) => {
-      el.style.setProperty("--unidraw-embed-font-size", `${this.plugin.settings.embedFontSize}px`);
-      el.style.setProperty("--unidraw-embed-line-height", String(this.plugin.settings.embedLineHeight));
+      el.setCssProps({
+        "--unidraw-embed-font-size": `${this.plugin.settings.embedFontSize}px`,
+        "--unidraw-embed-line-height": String(this.plugin.settings.embedLineHeight),
+      });
     });
   }
 }

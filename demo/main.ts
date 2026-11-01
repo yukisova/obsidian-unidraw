@@ -127,7 +127,8 @@ const language = params.get("lang") === "zh" ? "zh" : "en";
 
 document.body.classList.toggle("theme-light", theme === "light");
 document.body.classList.toggle("theme-dark", theme === "dark");
-document.documentElement.style.colorScheme = theme;
+document.documentElement.classList.toggle("theme-light", theme === "light");
+document.documentElement.classList.toggle("theme-dark", theme === "dark");
 document.body.dataset.scene = scene;
 if (params.get("still") === "1") document.body.classList.add("demo-still");
 
@@ -202,16 +203,18 @@ let ui: UnidrawEditorUI | null = null;
 const host: UnidrawUIHost = {
   icon: (el, name) => {
     const svg = ICONS[name];
-    if (svg) {
-      el.innerHTML = svg;
-    }
+    if (!svg) return;
+    const parsed = new DOMParser().parseFromString(svg, "image/svg+xml");
+    if (parsed.documentElement) el.appendChild(document.importNode(parsed.documentElement, true));
   },
   tooltip: (el, text) => {
     el.setAttribute("title", text);
   },
   isActive: () => true,
   getSettings: () => settings,
-  getVersion: () => "0.2.19",
+  getVersion: () => "0.4.8",
+  isMac: () => true,
+  saveGroupTemplate: async () => true,
   requestSave: () => {
     if (!ui) return;
     ui.setSaveState("unsaved");
@@ -277,20 +280,6 @@ function setupScene(): void {
   }
 }
 
-function simulateHover(): void {
-  const canvas = document.querySelector<HTMLCanvasElement>(".unidraw-canvas");
-  if (!canvas) return;
-  const rect = canvas.getBoundingClientRect();
-  canvas.dispatchEvent(
-    new PointerEvent("pointermove", {
-      bubbles: true,
-      clientX: rect.left + rect.width * 0.42,
-      clientY: rect.top + rect.height * 0.32,
-      pointerId: 1,
-      pointerType: "mouse",
-    }),
-  );
-}
 
 async function ready(): Promise<void> {
   try {

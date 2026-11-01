@@ -2,8 +2,10 @@ import {
   ItemView,
   MarkdownView,
   Notice,
+  Platform,
   TFile,
   WorkspaceLeaf,
+  normalizePath,
   setIcon,
   setTooltip,
   type ViewStateResult,
@@ -12,6 +14,7 @@ import { VIEW_TYPE_UNIDRAW } from "../core/format";
 import {
   UnidrawEditorUI,
   type UnidrawUIHost,
+  type GroupTemplatePayload,
   type UnidrawUISettings,
 } from "../ui/editor-ui";
 import type UnidrawPlugin from "../main";
@@ -89,6 +92,45 @@ export class UnidrawView extends ItemView {
     else this.ui.loadText("");
   }
 
+  private async saveTextExport(filename: string, content: string): Promise<boolean> {
+    try {
+      const folder = this.filePath ? this.filePath.split("/").slice(0, -1).join("/") : "";
+      const base = normalizePath(folder ? `${folder}/${filename}` : filename);
+      const dot = base.lastIndexOf(".");
+      const stem = dot > 0 ? base.slice(0, dot) : base;
+      const ext = dot > 0 ? base.slice(dot) : "";
+      let path = base;
+      let index = 1;
+      while (this.app.vault.getAbstractFileByPath(path)) {
+        path = `${stem} ${index}${ext}`;
+        index += 1;
+      }
+      await this.app.vault.create(path, content);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async saveGroupTemplate(template: GroupTemplatePayload): Promise<boolean> {
+    try {
+      const dir = this.plugin.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}`;
+      const path = `${dir}/group-templates.json`;
+      const adapter = this.app.vault.adapter;
+      let templates: GroupTemplatePayload[] = [];
+      if (await adapter.exists(path)) {
+        const raw = await adapter.read(path);
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) templates = parsed as GroupTemplatePayload[];
+      }
+      templates.push(template);
+      await adapter.write(path, JSON.stringify(templates, null, 2));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private createHost(): UnidrawUIHost {
     return {
       icon: (el, name) => setIcon(el, name),
@@ -96,6 +138,7 @@ export class UnidrawView extends ItemView {
       isActive: () => this.app.workspace.getActiveViewOfType(UnidrawView) === this,
       getSettings: () => this.plugin.settings as UnidrawUISettings,
       getVersion: () => this.plugin.manifest.version,
+      isMac: () => Platform.isMacOS || Platform.isIosApp,
       requestSave: () => this.scheduleSave(),
       saveNow: () => void this.save({ manual: true, force: true }),
       getFileName: () => this.fileBaseName(),
@@ -103,6 +146,8 @@ export class UnidrawView extends ItemView {
       savePluginSettings: () => {
         void this.plugin.saveSettings();
       },
+      saveGroupTemplate: (template) => this.saveGroupTemplate(template),
+      saveTextExport: (filename, content) => this.saveTextExport(filename, content),
     };
   }
 

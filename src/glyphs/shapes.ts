@@ -6,13 +6,11 @@ import {
   directionMask,
   E,
   glyphFor,
-  horizontalGlyph,
   N,
   paintChar,
   paintMask,
   S,
   strokeInfo,
-  verticalGlyph,
   W,
 } from "./box";
 import { fillGlyph } from "./fill";
@@ -33,13 +31,6 @@ export interface ShapeOptions {
   fillChar?: string;
 }
 
-interface MaskedPath {
-  path: CellPos[];
-  closed?: boolean;
-  diagonal?: boolean;
-  /** Direction of the drag, used for arrows on a single-cell line. */
-  fallbackDir?: [number, number];
-}
 
 function sign(n: number): number {
   return n === 0 ? 0 : n > 0 ? 1 : -1;

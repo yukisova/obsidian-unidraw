@@ -119,6 +119,37 @@ function normalizeObject(raw: unknown): DrawingObject | null {
       route: pick(ROUTES, data.route, "straight"),
       arrowStart: pick(ARROWS, data.arrowStart, "none"),
       arrowEnd: pick(ARROWS, data.arrowEnd, "none"),
+      routing: data.routing === "4way" || data.routing === "8way"
+        ? data.routing
+        : data.route === "elbow" ? "4way" : "8way",
+      lineStyle: data.lineStyle === "thin" || data.lineStyle === "bold" || data.lineStyle === "double" || data.lineStyle === "filled" || data.lineStyle === "ascii"
+        ? data.lineStyle
+        : data.style === "heavy" ? "bold" : data.style === "double" ? "double" : data.style === "ascii" ? "ascii" : "thin",
+      linePattern: data.linePattern === "solid" || data.linePattern === "dash2" || data.linePattern === "dash3" || data.linePattern === "dash4"
+        ? data.linePattern
+        : "solid",
+      lineFillChar: asChar(data.lineFillChar, "█"),
+      interrupt: data.interrupt && typeof data.interrupt === "object"
+        ? {
+            segment: clampInt((data.interrupt as Record<string, unknown>).segment, 1, 999, 2),
+            gap: clampInt((data.interrupt as Record<string, unknown>).gap, 1, 999, 2),
+            offset: clampInt((data.interrupt as Record<string, unknown>).offset, 0, 9999, 0),
+          }
+        : undefined,
+      interruptEnabled: data.interruptEnabled === true,
+      ignoreShapes: data.ignoreShapes === "all" || data.ignoreShapes === "none" || data.ignoreShapes === "exceptTargets"
+        ? data.ignoreShapes
+        : "all",
+      startTargetId: typeof data.startTargetId === "string" ? data.startTargetId : undefined,
+      endTargetId: typeof data.endTargetId === "string" ? data.endTargetId : undefined,
+      startAnchor: data.startAnchor === "left" || data.startAnchor === "right" || data.startAnchor === "top" || data.startAnchor === "bottom" ? data.startAnchor : undefined,
+      endAnchor: data.endAnchor === "left" || data.endAnchor === "right" || data.endAnchor === "top" || data.endAnchor === "bottom" ? data.endAnchor : undefined,
+      startAnchorOffset: typeof data.startAnchorOffset === "number" ? Math.max(0, Math.round(data.startAnchorOffset)) : undefined,
+      endAnchorOffset: typeof data.endAnchorOffset === "number" ? Math.max(0, Math.round(data.endAnchorOffset)) : undefined,
+      arrowStartMode: data.arrowStartMode === "custom" ? "custom" : "adaptive",
+      arrowEndMode: data.arrowEndMode === "custom" ? "custom" : "adaptive",
+      arrowStartChar: asChar(data.arrowStartChar, "←"),
+      arrowEndChar: asChar(data.arrowEndChar, "→"),
     };
     return object;
   }
@@ -239,7 +270,17 @@ function normalizeObject(raw: unknown): DrawingObject | null {
     const children = Array.isArray(data.children)
       ? data.children.map(normalizeObject).filter((object): object is DrawingObject => !!object)
       : [];
-    const object: GroupObject = { id, kind: "group", hidden, visible, locked, children };
+    const name = typeof data.name === "string" ? data.name.trim().slice(0, 80) : "";
+    const object: GroupObject = {
+      id,
+      kind: "group",
+      hidden,
+      visible,
+      locked,
+      name: name || undefined,
+      children,
+      renderMode: data.renderMode === "merge" ? "merge" : "separate",
+    };
     return object;
   }
   return null;
@@ -363,12 +404,19 @@ function provisionalExtent(data: UnidrawData): { cols: number; rows: number } {
 
 function renderComposite(data: UnidrawData, cols: number, rows: number, exclude?: Set<string>): DrawingDocument {
   const out = new DrawingDocument(cols, rows);
+  const obstacles = allObjects(data)
+    .filter((object) => isElementVisible(object) && object.kind !== "line" && object.kind !== "cells" && object.global !== true)
+    .map((object) => {
+      const bounds = objectBounds(object);
+      return bounds ? { id: object.id, x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h } : null;
+    })
+    .filter((box): box is { id: string; x: number; y: number; w: number; h: number } => !!box);
   for (const layer of data.layers) {
     if (!layer.visible) continue;
     const layerDoc = new DrawingDocument(cols, rows);
     for (const object of layer.objects) {
       if (!isElementVisible(object) || exclude?.has(object.id)) continue;
-      renderElement(layerDoc, object);
+      renderElement(layerDoc, object, { obstacles });
     }
     for (let r = 0; r < rows; r++) {
       const row = layerDoc.rawRow(r);

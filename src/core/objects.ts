@@ -29,6 +29,11 @@ export interface ObjectBase {
   global?: boolean;
 }
 
+export type LineRouting = "4way" | "8way";
+export type LineStyleMode = "thin" | "bold" | "double" | "filled" | "ascii";
+export type LinePattern = "solid" | "dash2" | "dash3" | "dash4";
+export type LineIgnoreMode = "all" | "none" | "exceptTargets";
+
 export interface LineObject extends ObjectBase {
   kind: "line";
   x1: number;
@@ -39,6 +44,23 @@ export interface LineObject extends ObjectBase {
   route: LineRoute;
   arrowStart: ArrowStyle;
   arrowEnd: ArrowStyle;
+  routing?: LineRouting;
+  lineStyle?: LineStyleMode;
+  linePattern?: LinePattern;
+  lineFillChar?: string;
+  interruptEnabled?: boolean;
+  interrupt?: RectInterrupt;
+  ignoreShapes?: LineIgnoreMode;
+  startTargetId?: string;
+  endTargetId?: string;
+  startAnchor?: "left" | "right" | "top" | "bottom";
+  endAnchor?: "left" | "right" | "top" | "bottom";
+  startAnchorOffset?: number;
+  endAnchorOffset?: number;
+  arrowStartMode?: "adaptive" | "custom";
+  arrowEndMode?: "adaptive" | "custom";
+  arrowStartChar?: string;
+  arrowEndChar?: string;
 }
 
 export type RectFillMode = "empty" | "block" | "custom";
@@ -114,7 +136,9 @@ export interface CellsObject extends ObjectBase {
 
 export interface GroupObject extends ObjectBase {
   kind: "group";
+  name?: string;
   children: DrawingObject[];
+  renderMode?: "separate" | "merge";
 }
 
 export type DrawingObject =

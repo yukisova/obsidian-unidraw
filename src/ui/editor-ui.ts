@@ -7,10 +7,7 @@ import {
   type Translator,
 } from "../core/i18n";
 import type {
-  ArrowStyle,
   EditorSettings,
-  GridMode,
-  LineRoute,
   SaveState,
   StrokeStyle,
   TextAlignH,
@@ -20,9 +17,9 @@ import type {
   ToolId,
 } from "../core/types";
 import { drawingToMarkdown } from "../core/format";
-import { getShapeFill, type DrawingObject, type Layer, type RectFillMode, type RectObject, type UnidrawData } from "../core/objects";
-import { codePointLabel, firstGrapheme, widthLabel } from "../core/unicode";
-import { Editor, type EditorStatus, type TextEditRequest } from "../editor/editor";
+import { getShapeFill, type DrawingObject, type GroupObject, type RectFillMode, type RectObject } from "../core/objects";
+import { codePointLabel, widthLabel } from "../core/unicode";
+import { Editor, type TextEditRequest } from "../editor/editor";
 import { STROKE_SAMPLES } from "../glyphs/box";
 import {
   canvasToBlob,
@@ -31,10 +28,17 @@ import {
   downloadBlob,
   renderDrawingImage,
 } from "../render/export-image";
-import { CHAR_CATEGORIES, TEMPLATES, TOOL_DEFS, TOOL_GROUPS, type DrawingTemplate, type ToolDef } from "./data";
+import { CHAR_CATEGORIES, TEMPLATES, TOOL_DEFS, TOOL_GROUPS } from "./data";
 
 export interface UnidrawUISettings extends EditorSettings {
   language: LanguageSetting;
+}
+
+export interface GroupTemplatePayload {
+  version: 1;
+  name: string;
+  savedAt: string;
+  group: GroupObject;
 }
 
 export interface UnidrawUIHost {
@@ -43,11 +47,15 @@ export interface UnidrawUIHost {
   isActive: () => boolean;
   getSettings: () => UnidrawUISettings;
   getVersion: () => string;
+  /** True on macOS/iOS, used only for shortcut labels. */
+  isMac: () => boolean;
   requestSave: () => void;
   saveNow: () => void;
   getFileName: () => string;
   insertIntoNote: (markdown: string) => boolean;
   savePluginSettings?: () => void;
+  saveGroupTemplate?: (template: GroupTemplatePayload) => Promise<boolean>;
+  saveTextExport?: (filename: string, content: string) => Promise<boolean>;
 }
 
 interface PopoverHandle {
@@ -117,12 +125,8 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function isMacLike(): boolean {
-  return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
-}
-
-function keyCombos(): { mod: string; shift: string; alt: string } {
-  return isMacLike() ? { mod: "⌘", shift: "⇧", alt: "⌥" } : { mod: "Ctrl", shift: "Shift", alt: "Alt" };
+function keyCombos(isMac: boolean): { mod: string; shift: string; alt: string } {
+  return isMac ? { mod: "⌘", shift: "⇧", alt: "⌥" } : { mod: "Ctrl", shift: "Shift", alt: "Alt" };
 }
 
 function sanitizeFilename(name: string): string {
@@ -142,24 +146,17 @@ function setIconSafe(host: UnidrawUIHost, target: HTMLElement, name: string): vo
   }
 }
 
-function arrowGlyph(style: ArrowStyle): string {
-  return style === "none" ? "—" : style === "line" ? "→" : style === "hollow" ? "▷" : "▶";
-}
-
 export class UnidrawEditorUI {
-  private container: HTMLElement;
   private host: UnidrawUIHost;
   private settings: UnidrawUISettings;
   private language: Language;
   private t: Translator;
   private root: HTMLDivElement;
   private headerEl: HTMLElement;
-  private stylebarEl: HTMLDivElement;
   private workspaceEl: HTMLDivElement;
   private inspectorEl: HTMLElement;
   private stageWrap: HTMLDivElement;
   private stageEl: HTMLDivElement;
-  private layersEl: HTMLElement;
   private elementsCard: HTMLElement;
   private statusEl: HTMLElement;
   private toastLayer: HTMLDivElement;
@@ -171,7 +168,6 @@ export class UnidrawEditorUI {
   private undoBtn: HTMLButtonElement | null = null;
   private redoBtn: HTMLButtonElement | null = null;
   private gridBtn: HTMLButtonElement | null = null;
-  private gridSelect: HTMLSelectElement | null = null;
   private zoomLabel: HTMLButtonElement | null = null;
   private saveDot: HTMLSpanElement | null = null;
   private saveText: HTMLSpanElement | null = null;
@@ -182,26 +178,21 @@ export class UnidrawEditorUI {
   private canvasStatusEl: HTMLSpanElement | null = null;
   private zoomEl: HTMLSpanElement | null = null;
   private hintEl: HTMLSpanElement | null = null;
-  private styleHintEl: HTMLSpanElement | null = null;
   private popover: PopoverHandle | null = null;
   private helpEl: HTMLElement | null = null;
   private textModalEl: HTMLElement | null = null;
-  private textRequest: TextEditRequest | null = null;
   private textCommit: (() => void) | null = null;
-  private renamingLayerId: string | null = null;
-  private styleSig = "";
-  private layerSig = "";
   private inspectorSig = "";
   private elementListSig = "";
   private elementListAnchorId: string | null = null;
   private elementListDraggingId: string | null = null;
+  private expandedGroups = new Set<string>();
   private elementRowMenuEl: HTMLElement | null = null;
   private elementRowMenuCleanup: (() => void) | null = null;
   private lastBorderStyle: StrokeStyle = "light";
-  private toastTimers: number[] = [];
+  private toastTimers = new Set<number>();
 
   constructor(container: HTMLElement, host: UnidrawUIHost) {
-    this.container = container;
     this.host = host;
     this.settings = host.getSettings();
     this.language = resolveLanguage(this.settings.language);
@@ -209,14 +200,11 @@ export class UnidrawEditorUI {
 
     this.root = el("div", "unidraw-root", container);
     this.headerEl = el("header", "unidraw-header", this.root);
-    this.stylebarEl = el("div", "unidraw-stylebar", this.root);
     this.workspaceEl = el("div", "unidraw-workspace", this.root);
     this.inspectorEl = el("aside", "unidraw-inspector", this.workspaceEl);
     this.stageWrap = el("div", "unidraw-stage-wrap", this.workspaceEl);
     this.stageEl = el("div", "unidraw-stage", this.stageWrap);
     this.elementsCard = el("aside", "unidraw-elements-card", this.workspaceEl);
-    // The element model uses a single frame; the legacy layer panel is not shown.
-    this.layersEl = document.createElement("aside");
     this.statusEl = el("footer", "unidraw-statusbar", this.root);
     this.toastLayer = el("div", "unidraw-toast-layer", this.root);
     this.popoverLayer = el("div", "unidraw-popover-layer", this.root);
@@ -241,7 +229,6 @@ export class UnidrawEditorUI {
     });
 
     this.buildHeader();
-    this.buildStylebar();
     this.buildElementList();
     this.buildInspector();
     this.buildStatusbar();
@@ -285,7 +272,6 @@ export class UnidrawEditorUI {
       this.abort = new AbortController();
       this.bindGlobal();
       this.buildHeader();
-      this.buildStylebar();
       this.buildInspector();
       this.buildStatusbar();
     }
@@ -296,7 +282,7 @@ export class UnidrawEditorUI {
     this.closeAllOverlays();
     this.abort.abort();
     for (const timer of this.toastTimers) window.clearTimeout(timer);
-    this.toastTimers = [];
+    this.toastTimers.clear();
     this.editor.destroy();
     this.root.remove();
   }
@@ -379,24 +365,7 @@ export class UnidrawEditorUI {
     if (this.redoBtn) this.redoBtn.disabled = !status.canRedo;
     for (const [tool, button] of this.toolButtons) button.toggleClass("is-active", tool === status.tool);
     if (this.gridBtn) this.gridBtn.toggleClass("is-active", status.grid !== "none");
-    if (this.gridSelect) this.gridSelect.value = String(status.gridSize);
     this.root.toggleClass("unidraw-hide-status", !this.settings.showStatusBar);
-
-    const styleSig = [
-      status.tool,
-      status.drawChar,
-      this.editor.getStrokeStyle(),
-      this.editor.getRoute(),
-      this.editor.getArrowStyles().start,
-      this.editor.getArrowStyles().end,
-      this.editor.getTextFont(),
-      this.settings.fontSize,
-      this.language,
-    ].join("|");
-    if (styleSig !== this.styleSig) {
-      this.styleSig = styleSig;
-      this.buildStylebar();
-    }
 
     const selected = this.editor.getSelectedObjects().filter((object) => object.global !== true);
     const inspectorSig = JSON.stringify({
@@ -404,6 +373,9 @@ export class UnidrawEditorUI {
       props: selected.map((object) => this.objectSignature(object)),
       layer: this.editor.getData().activeLayerId,
       lang: this.language,
+      tool: this.editor.getStatus().tool,
+      drawChar: this.editor.getDrawChar(),
+      fillChar: this.editor.getFillChar(),
     });
     if (inspectorSig !== this.inspectorSig) {
       this.inspectorSig = inspectorSig;
@@ -414,18 +386,8 @@ export class UnidrawEditorUI {
     const listSig = JSON.stringify({
       objects: layerObjects
         .filter((object) => object.kind !== "cells" || object.role !== "erase")
-        .map((object, index) => [
-          index,
-          object.id,
-          object.kind,
-          object.global === true,
-          object.visible !== false && object.hidden !== true,
-          object.locked === true,
-          object.kind === "cells" ? object.cells.length : 0,
-          object.kind === "group" ? object.children.length : 0,
-          object.kind === "rect" && typeof object.text === "string" ? object.text : "",
-          object.kind === "rect" || object.kind === "circle" || object.kind === "diamond" ? getShapeFill(object) : null,
-        ]),
+        .map((object) => this.elementTreeSignature(object)),
+      expanded: Array.from(this.expandedGroups).sort(),
       selected: allSelectedIds,
       lang: this.language,
     });
@@ -433,17 +395,37 @@ export class UnidrawEditorUI {
       this.elementListSig = listSig;
       this.buildElementList();
     }
-    this.workspaceEl.toggleClass("has-inspector", selected.length > 0);
+    const showToolOptions = status.tool === "pencil" || status.tool === "solidRect" || status.tool === "fill";
+    this.workspaceEl.toggleClass("has-inspector", selected.length > 0 || showToolOptions);
     const def = TOOL_DEFS.find((item) => item.id === status.tool);
     const toolHint = def ? this.t(def.hintKey) : "";
     if (this.hintEl) this.hintEl.setText(toolHint);
-    if (this.styleHintEl) this.styleHintEl.setText(toolHint);
   }
 
   private objectSignature(object: DrawingObject): unknown {
     const state = [object.visible !== false, object.locked === true, object.global === true];
     if (object.kind === "line") {
-      return [state, object.kind, object.style, object.route, object.arrowStart, object.arrowEnd];
+      return [
+        state,
+        object.kind,
+        object.style,
+        object.route,
+        object.arrowStart,
+        object.arrowEnd,
+        object.arrowStartMode,
+        object.arrowEndMode,
+        object.arrowStartChar,
+        object.arrowEndChar,
+        object.routing,
+        object.lineStyle,
+        object.linePattern,
+        object.lineFillChar,
+        object.interruptEnabled,
+        object.interrupt?.segment,
+        object.interrupt?.gap,
+        object.interrupt?.offset,
+        object.ignoreShapes,
+      ];
     }
     if (object.kind === "rect") {
       return [
@@ -473,7 +455,7 @@ export class UnidrawEditorUI {
     }
     if (object.kind === "circle" || object.kind === "diamond") return [state, object.kind, object.style, object.fill ?? null];
     if (object.kind === "group") {
-      return [state, object.kind, object.children.map((child) => child.kind).join(",")];
+      return [state, object.kind, object.name, object.renderMode, object.children.map((child) => child.kind).join(",")];
     }
     return [state, object.kind, object.role, object.cells.length, object.global === true];
   }
@@ -496,8 +478,27 @@ export class UnidrawEditorUI {
         const icon = el("span", "unidraw-btn-icon", button);
         if (def.id === "solidRect") {
           icon.classList.add("unidraw-tool-fill-icon");
-          icon.innerHTML =
-            '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="8" y="8" width="8" height="8" rx="1" fill="currentColor"/></svg>';
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("viewBox", "0 0 24 24");
+          svg.setAttribute("aria-hidden", "true");
+          const outline = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          outline.setAttribute("x", "3.5");
+          outline.setAttribute("y", "3.5");
+          outline.setAttribute("width", "17");
+          outline.setAttribute("height", "17");
+          outline.setAttribute("rx", "2");
+          outline.setAttribute("fill", "none");
+          outline.setAttribute("stroke", "currentColor");
+          outline.setAttribute("stroke-width", "1.8");
+          const solid = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          solid.setAttribute("x", "8");
+          solid.setAttribute("y", "8");
+          solid.setAttribute("width", "8");
+          solid.setAttribute("height", "8");
+          solid.setAttribute("rx", "1");
+          solid.setAttribute("fill", "currentColor");
+          svg.append(outline, solid);
+          icon.appendChild(svg);
         } else {
           setIconSafe(this.host, icon, def.icon);
         }
@@ -518,22 +519,6 @@ export class UnidrawEditorUI {
     this.redoBtn.dataset.action = "redo";
 
     const gridGroup = el("div", "unidraw-action-group", actions);
-    el("span", "unidraw-action-label", gridGroup).setText(this.t("style.gridSize"));
-    const gridSelect = el("select", "unidraw-select unidraw-grid-select", gridGroup) as HTMLSelectElement;
-    for (const size of [4, 8, 12, 16]) {
-      const option = el("option", "", gridSelect) as HTMLOptionElement;
-      option.value = String(size);
-      option.textContent = `${size}px`;
-    }
-    gridSelect.value = String(this.settings.fontSize);
-    gridSelect.setAttribute("aria-label", this.t("style.gridSize"));
-    this.host.tooltip(gridSelect, this.t("style.gridSize"));
-    gridSelect.addEventListener("change", () => {
-      this.editor.setGridSize(Number(gridSelect.value));
-      this.showToastKey("notice.gridSize", { size: this.settings.fontSize });
-      this.updateStatus();
-    });
-    this.gridSelect = gridSelect;
     this.gridBtn = this.iconButton(
       gridGroup,
       "grid",
@@ -584,314 +569,61 @@ export class UnidrawEditorUI {
     return button;
   }
 
-  // --------------------------------------------------------------- stylebar
-
-  private buildStylebar(): void {
-    this.stylebarEl.empty();
-    const status = this.editor.getStatus();
-    const def = TOOL_DEFS.find((item) => item.id === status.tool);
-    if (def) {
-      const tool = el("div", "unidraw-style-tool", this.stylebarEl);
-      const icon = el("span", "unidraw-style-tool-icon", tool);
-      setIconSafe(this.host, icon, def.icon);
-      el("span", "unidraw-tool-label", tool).setText(this.t(def.labelKey));
-    }
-    const controls = el("div", "unidraw-style-controls", this.stylebarEl);
-    const tool = status.tool;
-
-    if (tool === "pencil") {
-      this.charControl(controls, this.t("style.pencilChar"), this.editor.getDrawChar(), () => {
-        this.openCharPalette(this.stylebarEl, "draw");
-      });
-    } else if (tool === "solidRect" || tool === "fill") {
-      this.charControl(controls, this.t("style.fillChar"), this.editor.getFillChar(), () => {
-        this.openCharPalette(this.stylebarEl, "fill");
-      });
-    } else if (tool === "line") {
-      this.strokeControl(controls, this.editor.getStrokeStyle(), (style) => this.editor.setStrokeStyle(style));
-      this.routeControl(controls, this.editor.getRoute(), (route) => this.editor.setRoute(route));
-      this.arrowControl(controls, "start", this.editor.getArrowStyles().start, (style) => this.editor.setArrowStartStyle(style));
-      this.arrowControl(controls, "end", this.editor.getArrowStyles().end, (style) => this.editor.setArrowEndStyle(style));
-    } else if (tool === "rect" || tool === "circle" || tool === "diamond") {
-      this.strokeControl(controls, this.editor.getStrokeStyle(), (style) => this.editor.setStrokeStyle(style));
-    }
-    const hint = el("span", "unidraw-style-hint", this.stylebarEl);
-    this.styleHintEl = hint;
-    if (def) hint.setText(this.t(def.hintKey));
-  }
-
-  private charControl(parent: HTMLElement, label: string, char: string, onClick: () => void): void {
-    const wrap = el("div", "unidraw-style-field", parent);
-    el("span", "unidraw-field-label", wrap).setText(label);
-    const button = el("button", "unidraw-char-swatch", wrap) as HTMLButtonElement;
-    button.type = "button";
-    button.setText(char);
-    button.addEventListener("click", onClick);
-    this.host.tooltip(button, this.t("palette.title"));
-  }
-
-  private strokeControl(parent: HTMLElement, value: StrokeStyle, onChange: (value: StrokeStyle) => void): void {
-    const field = el("div", "unidraw-style-field", parent);
-    el("span", "unidraw-field-label", field).setText(this.t("style.stroke"));
-    const seg = el("div", "unidraw-segmented", field);
-    for (const sample of STROKE_SAMPLES) {
-      const button = el("button", "unidraw-segment", seg) as HTMLButtonElement;
-      button.type = "button";
-      button.setText(sample.glyph);
-      button.dataset.value = sample.style;
-      button.toggleClass("is-active", sample.style === value);
-      this.host.tooltip(button, sample.style);
-      button.addEventListener("click", () => {
-        onChange(sample.style);
-        this.updateStatus();
-      });
-    }
-  }
-
-  private routeControl(parent: HTMLElement, value: LineRoute, onChange: (value: LineRoute) => void): void {
-    const field = el("div", "unidraw-style-field", parent);
-    el("span", "unidraw-field-label", field).setText(this.t("style.route"));
-    const seg = el("div", "unidraw-segmented", field);
-    const routes: Array<{ id: LineRoute; glyph: string; label: MessageKey }> = [
-      { id: "straight", glyph: "╱", label: "route.straight" },
-      { id: "diagonal", glyph: "╱─", label: "route.diagonal" },
-      { id: "elbow", glyph: "└", label: "route.elbow" },
-    ];
-    for (const route of routes) {
-      const button = el("button", "unidraw-segment", seg) as HTMLButtonElement;
-      button.type = "button";
-      button.setText(route.glyph);
-      button.toggleClass("is-active", route.id === value);
-      this.host.tooltip(button, this.t(route.label));
-      button.addEventListener("click", () => {
-        onChange(route.id);
-        this.updateStatus();
-      });
-    }
-  }
-
-  private arrowControl(
-    parent: HTMLElement,
-    which: "start" | "end",
-    value: ArrowStyle,
-    onChange: (value: ArrowStyle) => void,
-  ): void {
-    const field = el("div", "unidraw-style-field", parent);
-    el("span", "unidraw-field-label", field).setText(
-      which === "start" ? this.t("inspector.arrowStart") : this.t("inspector.arrowEnd"),
-    );
-    const select = el("select", "unidraw-select", field) as HTMLSelectElement;
-    for (const style of ["none", "line", "hollow", "solid"] as ArrowStyle[]) {
-      const option = el("option", "", select) as HTMLOptionElement;
-      option.value = style;
-      option.textContent = `${arrowGlyph(style)} ${this.t(`arrow.${style}` as MessageKey)}`;
-    }
-    select.value = value;
-    select.addEventListener("change", () => {
-      onChange(select.value as ArrowStyle);
-      this.updateStatus();
-    });
-  }
-
-  // ----------------------------------------------------------------- layers
-
-  private buildLayers(): void {
-    this.layersEl.empty();
-    const header = el("div", "unidraw-layers-header", this.layersEl);
-    const title = el("div", "unidraw-layers-title", header);
-    const icon = el("span", "unidraw-layers-title-icon", title);
-    setIconSafe(this.host, icon, "layers");
-    el("span", "", title).setText(this.t("layer.title"));
-    const add = el("button", "unidraw-btn unidraw-icon-btn", header) as HTMLButtonElement;
-    add.type = "button";
-    add.dataset.action = "layer-add";
-    const addIcon = el("span", "unidraw-btn-icon", add);
-    setIconSafe(this.host, addIcon, "plus");
-    this.host.tooltip(add, this.t("layer.add"));
-    add.addEventListener("click", () => {
-      this.editor.addLayer();
-      this.updateStatus();
-    });
-
-    const list = el("div", "unidraw-layers-list", this.layersEl);
-    const layers = this.editor.getLayers().slice().reverse();
-    const active = this.editor.getData().activeLayerId;
-    const selected = new Set(this.editor.getSelectedLayerIds());
-    for (const layer of layers) {
-      const row = el("div", "unidraw-layer-row", list);
-      row.dataset.layerId = layer.id;
-      row.toggleClass("is-active", layer.id === active);
-      row.toggleClass("is-selected", selected.has(layer.id));
-      row.toggleClass("is-hidden", !layer.visible);
-      row.toggleClass("is-locked", layer.locked);
-
-      const visibility = el("button", "unidraw-layer-icon", row) as HTMLButtonElement;
-      visibility.type = "button";
-      visibility.dataset.action = `layer-visibility:${layer.id}`;
-      setIconSafe(this.host, el("span", "unidraw-btn-icon", visibility), layer.visible ? "eye" : "eye-off");
-      this.host.tooltip(visibility, layer.visible ? this.t("layer.hide") : this.t("layer.show"));
-      visibility.addEventListener("click", (event) => {
-        event.stopPropagation();
-        this.editor.toggleLayerVisibility(layer.id);
-        this.updateStatus();
-      });
-
-      const lock = el("button", "unidraw-layer-icon", row) as HTMLButtonElement;
-      lock.type = "button";
-      lock.dataset.action = `layer-lock:${layer.id}`;
-      setIconSafe(this.host, el("span", "unidraw-btn-icon", lock), layer.locked ? "lock" : "unlock");
-      this.host.tooltip(lock, layer.locked ? this.t("layer.unlock") : this.t("layer.lock"));
-      lock.addEventListener("click", (event) => {
-        event.stopPropagation();
-        this.editor.toggleLayerLock(layer.id);
-        this.updateStatus();
-      });
-
-      const name = el("div", "unidraw-layer-name", row);
-      name.setText(layer.name);
-      name.setAttribute("title", layer.name);
-      name.addEventListener("dblclick", (event) => {
-        event.stopPropagation();
-        this.beginRenameLayer(layer);
-      });
-      const count = el("span", "unidraw-layer-count", row);
-      count.setText(String(layer.objects.length));
-
-      const menu = el("button", "unidraw-layer-menu", row) as HTMLButtonElement;
-      menu.type = "button";
-      menu.dataset.action = `layer-menu:${layer.id}`;
-      setIconSafe(this.host, el("span", "unidraw-btn-icon", menu), "ellipsis-vertical");
-      this.host.tooltip(menu, this.t("aria.more"));
-      menu.addEventListener("click", (event) => {
-        event.stopPropagation();
-        this.openLayerMenu(menu, layer.id);
-      });
-      row.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!this.editor.getSelectedLayerIds().includes(layer.id)) {
-          this.editor.selectLayer(layer.id, false);
-        }
-        this.openLayerMenu(row, layer.id);
-      });
-      row.addEventListener("click", (event) => {
-        if ((event.target as HTMLElement).closest("button,input")) return;
-        this.editor.selectLayer(layer.id, event.ctrlKey || event.metaKey);
-        this.updateStatus();
-      });
-    }
-
-    const footer = el("div", "unidraw-layers-footer", this.layersEl);
-    el("div", "unidraw-layers-footer-title", footer).setText(this.t("layer.canvasMin"));
-    const inputs = el("div", "unidraw-canvas-min", footer);
-    const min = this.editor.getData();
-    const makeInput = (value: number, label: string, onChange: (n: number) => void): HTMLInputElement => {
-      const wrap = el("label", "unidraw-min-field", inputs);
-      el("span", "", wrap).setText(label);
-      const input = el("input", "unidraw-min-input", wrap) as HTMLInputElement;
-      input.type = "number";
-      input.min = "4";
-      input.max = "1200";
-      input.value = String(value);
-      input.addEventListener("change", () => onChange(Number(input.value)));
-      return input;
-    };
-    const colsInput = makeInput(min.minCols, this.t("layer.width"), (n) => {
-      this.editor.setMinCanvas(n, this.editor.getData().minRows);
-      this.updateStatus();
-    });
-    const rowsInput = makeInput(min.minRows, this.t("layer.height"), (n) => {
-      this.editor.setMinCanvas(this.editor.getData().minCols, n);
-      this.updateStatus();
-    });
-    colsInput.setAttribute("aria-label", `${this.t("layer.canvasMin")} ${this.t("layer.width")}`);
-    rowsInput.setAttribute("aria-label", `${this.t("layer.canvasMin")} ${this.t("layer.height")}`);
-  }
-
-  private beginRenameLayer(layer: Layer): void {
-    const row = this.layersEl.querySelector<HTMLElement>(`[data-layer-id="${CSS.escape(layer.id)}"]`);
-    if (!row) return;
-    const name = row.querySelector<HTMLElement>(".unidraw-layer-name");
-    if (!name) return;
-    this.renamingLayerId = layer.id;
-    const input = el("input", "unidraw-layer-name-input") as HTMLInputElement;
-    input.value = layer.name;
-    name.replaceWith(input);
-    input.focus();
-    input.select();
-    let done = false;
-    const finish = (commit: boolean) => {
-      if (done) return;
-      done = true;
-      this.renamingLayerId = null;
-      if (commit) this.editor.renameLayer(layer.id, input.value);
-      this.updateStatus();
-    };
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        finish(true);
-      } else if (event.key === "Escape") {
-        event.preventDefault();
-        finish(false);
-      }
-    });
-    input.addEventListener("blur", () => finish(true));
-  }
-
-  private openLayerMenu(anchor: HTMLElement, layerId: string): void {
-    const layer = this.editor.getLayers().find((item) => item.id === layerId);
-    if (!layer) return;
-    const selected = this.editor.getSelectedLayerIds();
-    if (!selected.includes(layerId)) this.editor.selectLayer(layerId, false);
-    const fresh = this.layersEl.querySelector<HTMLElement>(`[data-action="layer-menu:${CSS.escape(layerId)}"]`);
-    if (fresh) anchor = fresh;
-    const menu = el("div", "unidraw-menu-list");
-    const item = (icon: string, label: string, action: () => void, disabled = false): void => {
-      const button = el("button", "unidraw-menu-item", menu) as HTMLButtonElement;
-      button.type = "button";
-      button.disabled = disabled;
-      const iconEl = el("span", "unidraw-menu-icon", button);
-      setIconSafe(this.host, iconEl, icon);
-      el("span", "unidraw-menu-text", button).setText(label);
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        if (disabled) return;
-        this.closePopover();
-        action();
-        this.updateStatus();
-      });
-    };
-    item("pencil", this.t("layer.rename"), () => this.beginRenameLayer(layer));
-    item("chevron-up", this.t("layer.moveUp"), () => this.editor.moveLayer(layer.id, 1));
-    item("chevron-down", this.t("layer.moveDown"), () => this.editor.moveLayer(layer.id, -1));
-    el("div", "unidraw-menu-separator", menu);
-    const selectedIds = this.editor.getSelectedLayerIds();
-    const canMerge = selectedIds.length >= 2 && selectedIds.every((id) => !this.editor.getLayers().find((l) => l.id === id)?.locked);
-    item("merge", this.t("layer.merge"), () => this.editor.mergeLayers(selectedIds, false), !canMerge);
-    item("layers", this.t("layer.mergeNew"), () => this.editor.mergeLayers(selectedIds, true), !canMerge);
-    el("div", "unidraw-menu-separator", menu);
-    item("trash", this.t("layer.delete"), () => this.editor.deleteLayer(layer.id), this.editor.getLayers().length <= 1);
-    this.openPopover(anchor, menu, "unidraw-layer-menu-popover");
-  }
-
   // --------------------------------------------------------------- inspector
+
+  private elementTreeSignature(object: DrawingObject): unknown {
+    const base = [
+      object.id,
+      object.kind,
+      object.global === true,
+      object.visible !== false && object.hidden !== true,
+      object.locked === true,
+      object.kind === "cells" ? object.cells.length : 0,
+      object.kind === "rect" && typeof object.text === "string" ? object.text : "",
+      object.kind === "rect" || object.kind === "circle" || object.kind === "diamond" ? getShapeFill(object) : null,
+    ];
+    if (object.kind === "group") {
+      return [...base, object.name, object.renderMode, object.children.map((child) => this.elementTreeSignature(child))];
+    }
+    return base;
+  }
 
   private buildInspector(): void {
     this.inspectorEl.empty();
+    const tool = this.editor.getStatus().tool;
+    const charTool = tool === "pencil" || tool === "solidRect" || tool === "fill";
+    if (charTool) this.buildToolCharCard(tool);
     const selected = this.editor.getSelectedObjects();
     if (selected.length === 0) {
-      this.workspaceEl.removeClass("has-inspector");
+      this.workspaceEl.toggleClass("has-inspector", charTool);
       return;
     }
     this.workspaceEl.addClass("has-inspector");
     const header = el("div", "unidraw-inspector-header", this.inspectorEl);
     const title = el("div", "unidraw-inspector-title", header);
-    el("span", "", title).setText(this.t("inspector.title"));
+    if (selected.length === 1 && selected[0].kind === "group") {
+      const group = selected[0];
+      const nameInput = el("input", "unidraw-inspector-name-input", title) as HTMLInputElement;
+      nameInput.type = "text";
+      nameInput.maxLength = 80;
+      nameInput.value = group.name ?? "";
+      nameInput.placeholder = this.t("element.type.group");
+      nameInput.setAttribute("aria-label", this.t("group.rename"));
+      nameInput.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") nameInput.blur();
+      });
+      nameInput.addEventListener("change", () => {
+        this.editor.renameGroup(group.id, nameInput.value);
+        this.updateStatus();
+      });
+    } else {
+      el("span", "", title).setText(this.t("inspector.title"));
+    }
     el("span", "unidraw-inspector-count", title).setText(String(selected.length));
     this.buildElementControls(this.inspectorEl, selected);
     if (selected.length > 1) {
-      this.buildAlignControls(this.inspectorEl);
+      this.buildAlignControls();
       return;
     }
     const object = selected[0];
@@ -900,6 +632,28 @@ export class UnidrawEditorUI {
     else if (object.kind === "circle" || object.kind === "diamond") this.buildCircleInspector(object);
     else if (object.kind === "group") this.buildGroupInspector(object);
     else if (object.kind === "cells") this.buildCellsInspector(object);
+  }
+
+  private buildToolCharCard(tool: "pencil" | "solidRect" | "fill"): void {
+    const def = TOOL_DEFS.find((item) => item.id === tool);
+    const card = el("div", "unidraw-tool-options-card", this.inspectorEl);
+    const header = el("div", "unidraw-tool-options-header", card);
+    const icon = el("span", "unidraw-tool-options-icon", header);
+    if (def) setIconSafe(this.host, icon, def.icon);
+    el("span", "unidraw-tool-options-title", header).setText(
+      def ? this.t(def.labelKey) : this.t("toolOptions.title"),
+    );
+    const row = el("div", "unidraw-tool-options-row", card);
+    const label = el("span", "unidraw-tool-options-label", row);
+    label.setText(this.t(tool === "pencil" ? "style.pencilChar" : "style.fillChar"));
+    const char = tool === "pencil" ? this.editor.getDrawChar() : this.editor.getFillChar();
+    const button = el("button", "unidraw-tool-options-char", row) as HTMLButtonElement;
+    button.type = "button";
+    button.setText(char);
+    this.host.tooltip(button, this.t("palette.title"));
+    button.addEventListener("click", () => {
+      this.openCharPalette(button, tool === "pencil" ? "draw" : "fill");
+    });
   }
 
   private elementTypeKey(object: DrawingObject): MessageKey {
@@ -946,30 +700,61 @@ export class UnidrawEditorUI {
       el("div", "unidraw-elements-empty", list).setText(this.t("elements.empty"));
       return;
     }
-    // Topmost element first; the global doodle stays at the bottom.
     const topFirst = objects.slice().reverse();
     const selectableIds = topFirst
       .filter((object) => object.global !== true && object.locked !== true)
       .map((object) => object.id);
-    for (const object of topFirst) {
+
+    const renderRow = (
+      object: DrawingObject,
+      depth: number,
+      parentGroupId: string | null,
+      rootId: string,
+      siblings: DrawingObject[],
+      inheritedLocked: boolean,
+    ): void => {
       const hidden = object.visible === false || object.hidden === true;
-      const locked = object.locked === true;
+      const locked = inheritedLocked || object.locked === true;
       const row = el("div", "unidraw-element-row", list);
+      if (depth > 0) {
+        row.addClass("is-child");
+        row.addClass(`depth-${Math.min(depth, 4)}`);
+      }
       row.dataset.elementId = object.id;
+      row.dataset.parentGroupId = parentGroupId ?? "";
       row.tabIndex = 0;
       row.setAttribute("role", "button");
-      row.setAttribute("aria-selected", String(selected.has(object.id)));
-      row.toggleClass("is-selected", selected.has(object.id));
+      const rowSelected = depth === 0 && selected.has(object.id);
+      row.setAttribute("aria-selected", String(rowSelected));
+      row.toggleClass("is-selected", rowSelected);
       row.toggleClass("is-global", object.global === true);
       row.toggleClass("is-hidden", hidden);
       row.toggleClass("is-locked", locked);
       row.toggleClass("is-dragging", this.elementListDraggingId === object.id);
       if (object.global === true) row.setAttribute("aria-disabled", "true");
+
+      if (object.kind === "group") {
+        const expanded = this.expandedGroups.has(object.id);
+        row.toggleClass("is-expanded", expanded);
+        const expand = el("button", "unidraw-element-expand", row) as HTMLButtonElement;
+        expand.type = "button";
+        expand.draggable = false;
+        expand.setAttribute("aria-label", this.t(expanded ? "element.collapse" : "element.expand"));
+        setIconSafe(this.host, el("span", "unidraw-element-expand-icon", expand), expanded ? "chevron-down" : "chevron-right");
+        expand.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (expanded) this.expandedGroups.delete(object.id);
+          else this.expandedGroups.add(object.id);
+          this.buildElementList();
+          this.updateStatus();
+        });
+      }
+
       const icon = el("span", "unidraw-element-row-icon", row);
       setIconSafe(this.host, icon, this.elementTypeIcon(object));
       const body = el("span", "unidraw-element-row-body", row);
       const name = el("span", "unidraw-element-row-name", body);
-      name.setText(this.t(this.elementTypeKey(object)));
+      name.setText(object.kind === "group" && object.name ? object.name : this.t(this.elementTypeKey(object)));
       const detail = el("span", "unidraw-element-row-detail", body);
       if (object.global === true) detail.setText(this.t("element.pressEscGlobal"));
       else if (object.kind === "group") detail.setText(this.t("element.children", { count: object.children.length }));
@@ -977,7 +762,7 @@ export class UnidrawEditorUI {
       else if (object.kind === "rect" && typeof object.text === "string") {
         const firstLine = object.text.split("\n").find((line) => line.trim().length > 0) ?? "";
         detail.setText(firstLine.slice(0, 36) || this.t("element.type.text"));
-      } else detail.setText(`z ${objects.indexOf(object) + 1}`);
+      } else detail.setText(`z ${siblings.indexOf(object) + 1}`);
 
       const actions = el("span", "unidraw-element-row-actions", row);
       const action = (iconName: string, label: string, onClick: () => void): void => {
@@ -997,14 +782,19 @@ export class UnidrawEditorUI {
       action(
         hidden ? "eye-off" : "eye",
         this.t(hidden ? "element.show" : "element.hide"),
-        () => this.editor.setElementVisible(object.id, hidden),
+        () => {
+          if (depth === 0) this.editor.setElementVisible(object.id, hidden);
+          else this.editor.setChildElementVisible(object.id, hidden);
+        },
       );
-      // The global doodle deliberately has no lock control.
       if (object.global !== true) {
         action(
-          locked ? "lock" : "unlock",
-          this.t(locked ? "element.unlock" : "element.lock"),
-          () => this.editor.setElementLocked(object.id, !locked),
+          object.locked === true ? "lock" : "unlock",
+          this.t(object.locked === true ? "element.unlock" : "element.lock"),
+          () => {
+            if (depth === 0) this.editor.setElementLocked(object.id, object.locked !== true);
+            else this.editor.setChildElementLocked(object.id, object.locked !== true);
+          },
         );
       }
 
@@ -1012,27 +802,34 @@ export class UnidrawEditorUI {
       if (canSelect) {
         this.host.tooltip(row, this.t(this.elementTypeKey(object)));
         row.addEventListener("click", (event) => {
-          const anchor = this.elementListAnchorId;
-          const currentIndex = selectableIds.indexOf(object.id);
-          if (event.shiftKey && anchor && selectableIds.includes(anchor) && currentIndex >= 0) {
-            const anchorIndex = selectableIds.indexOf(anchor);
-            const start = Math.min(anchorIndex, currentIndex);
-            const end = Math.max(anchorIndex, currentIndex);
-            this.editor.selectElements(selectableIds.slice(start, end + 1), event.ctrlKey || event.metaKey ? "add" : "replace");
-          } else if (event.ctrlKey || event.metaKey) {
-            this.editor.selectElements([object.id], "toggle");
-            this.elementListAnchorId = object.id;
+          if (this.elementListDraggingId) return;
+          const selectId = depth === 0 ? object.id : rootId;
+          if (depth === 0) {
+            const anchor = this.elementListAnchorId;
+            const currentIndex = selectableIds.indexOf(object.id);
+            if (event.shiftKey && anchor && selectableIds.includes(anchor) && currentIndex >= 0) {
+              const anchorIndex = selectableIds.indexOf(anchor);
+              const start = Math.min(anchorIndex, currentIndex);
+              const end = Math.max(anchorIndex, currentIndex);
+              this.editor.selectElements(selectableIds.slice(start, end + 1), event.ctrlKey || event.metaKey ? "add" : "replace");
+            } else if (event.ctrlKey || event.metaKey) {
+              this.editor.selectElements([object.id], "toggle");
+              this.elementListAnchorId = object.id;
+            } else {
+              this.editor.selectElements([object.id], "replace");
+              this.elementListAnchorId = object.id;
+            }
           } else {
-            this.editor.selectElements([object.id], "replace");
-            this.elementListAnchorId = object.id;
+            this.editor.selectElements([selectId], "replace");
+            this.elementListAnchorId = selectId;
           }
           this.updateStatus();
         });
         row.addEventListener("keydown", (event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            this.editor.selectElements([object.id], "replace");
-            this.elementListAnchorId = object.id;
+            this.editor.selectElements([depth === 0 ? object.id : rootId], "replace");
+            this.elementListAnchorId = depth === 0 ? object.id : rootId;
             this.updateStatus();
           }
         });
@@ -1040,14 +837,10 @@ export class UnidrawEditorUI {
         this.host.tooltip(row, object.global === true ? this.t("element.pressEscGlobal") : this.t("element.locked"));
       }
 
-      // Drag a row to adjust z-index. Locked and global rows stay fixed.
       if (object.global !== true && !locked) {
         row.draggable = true;
         row.addEventListener("dragstart", (event) => {
           this.elementListDraggingId = object.id;
-          if (!this.editor.getSelectedObjects().some((item) => item.id === object.id)) {
-            this.editor.selectElements([object.id], "replace");
-          }
           if (event.dataTransfer) {
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData("text/plain", object.id);
@@ -1064,6 +857,9 @@ export class UnidrawEditorUI {
         });
         row.addEventListener("dragover", (event) => {
           if (!this.elementListDraggingId || this.elementListDraggingId === object.id) return;
+          const sourceRow = Array.from(list.querySelectorAll<HTMLElement>(".unidraw-element-row"))
+            .find((item) => item.dataset.elementId === this.elementListDraggingId);
+          if ((sourceRow?.dataset.parentGroupId ?? "") !== (parentGroupId ?? "")) return;
           event.preventDefault();
           const rect = row.getBoundingClientRect();
           const above = event.clientY < rect.top + rect.height / 2;
@@ -1078,14 +874,30 @@ export class UnidrawEditorUI {
           event.preventDefault();
           const sourceId = this.elementListDraggingId ?? event.dataTransfer?.getData("text/plain") ?? "";
           if (!sourceId || sourceId === object.id) return;
+          const sourceRow = Array.from(list.querySelectorAll<HTMLElement>(".unidraw-element-row"))
+            .find((item) => item.dataset.elementId === sourceId);
+          if ((sourceRow?.dataset.parentGroupId ?? "") !== (parentGroupId ?? "")) return;
           const rect = row.getBoundingClientRect();
           const above = event.clientY < rect.top + rect.height / 2;
-          this.editor.reorderElement(sourceId, object.id, above);
+          if (parentGroupId) this.editor.reorderGroupChild(parentGroupId, sourceId, object.id, above);
+          else this.editor.reorderElement(sourceId, object.id, above);
           this.elementListDraggingId = null;
           this.updateStatus();
         });
       }
-    }
+
+      if (object.kind === "group" && this.expandedGroups.has(object.id)) {
+        const children = object.children
+          .filter((child) => child.kind !== "cells" || child.role !== "erase")
+          .slice()
+          .reverse();
+        for (const child of children) {
+          renderRow(child, depth + 1, object.id, depth === 0 ? object.id : rootId, object.children, locked);
+        }
+      }
+    };
+
+    for (const object of topFirst) renderRow(object, 0, null, object.id, objects, false);
   }
 
   private closeElementRowMenu(): void {
@@ -1125,8 +937,10 @@ export class UnidrawEditorUI {
     const top = y + height + 12 < window.innerHeight
       ? y + 8
       : Math.max(8, y - height - 8);
-    menu.style.left = `${Math.round(left)}px`;
-    menu.style.top = `${Math.round(top)}px`;
+    menu.setCssStyles({
+      left: `${Math.round(left)}px`,
+      top: `${Math.round(top)}px`,
+    });
     this.elementRowMenuEl = menu;
 
     const onPointerDown = (event: PointerEvent): void => {
@@ -1236,10 +1050,206 @@ export class UnidrawEditorUI {
 
   private buildLineInspector(object: Extract<DrawingObject, { kind: "line" }>): void {
     const section = this.inspectorSection(this.t("inspector.line"));
-    this.inspectorStroke(section, object.style, (style) => this.editor.setSelectedLineStyle(style));
-    this.inspectorRoute(section, object.route, (route) => this.editor.setSelectedLineRoute(route));
-    this.inspectorArrow(section, "start", object.arrowStart, (style) => this.editor.setSelectedArrow("start", style));
-    this.inspectorArrow(section, "end", object.arrowEnd, (style) => this.editor.setSelectedArrow("end", style));
+    const routing = object.routing ?? (object.route === "elbow" ? "4way" : "8way");
+    const lineStyle = object.lineStyle ?? (object.style === "heavy" ? "bold" : object.style === "double" ? "double" : object.style === "ascii" ? "ascii" : "thin");
+    const ignore = object.ignoreShapes ?? "all";
+    const pattern = object.linePattern ?? "solid";
+    const choice = (
+      parent: HTMLElement,
+      active: boolean,
+      label: MessageKey,
+      onClick: () => void,
+      tooltip?: MessageKey,
+    ): HTMLButtonElement => {
+      const button = el("button", "unidraw-line-choice", parent) as HTMLButtonElement;
+      button.type = "button";
+      button.toggleClass("is-active", active);
+      button.setText(this.t(label));
+      if (tooltip) {
+        button.setAttribute("aria-label", this.t(tooltip));
+        this.host.tooltip(button, this.t(tooltip));
+      }
+      button.addEventListener("click", () => {
+        onClick();
+        this.updateStatus();
+      });
+      return button;
+    };
+
+    const routingField = el("div", "unidraw-line-field", section);
+    el("div", "unidraw-text-field-label", routingField).setText(this.t("line.routing"));
+    const routingGrid = el("div", "unidraw-line-choice-grid", routingField);
+    choice(routingGrid, routing === "4way", "line.routing.4way", () => this.editor.setSelectedLineRouting("4way"));
+    choice(routingGrid, routing === "8way", "line.routing.8way", () => this.editor.setSelectedLineRouting("8way"));
+
+    const ignoreField = el("div", "unidraw-line-field", section);
+    el("div", "unidraw-text-field-label", ignoreField).setText(this.t("line.ignore"));
+    const ignoreGrid = el("div", "unidraw-line-ignore-grid", ignoreField);
+    choice(ignoreGrid, ignore === "all", "line.ignore.all.short", () => this.editor.setSelectedLineIgnoreShapes("all"), "line.ignore.all");
+    choice(ignoreGrid, ignore === "none", "line.ignore.none.short", () => this.editor.setSelectedLineIgnoreShapes("none"), "line.ignore.none");
+    choice(ignoreGrid, ignore === "exceptTargets", "line.ignore.exceptTargets.short", () => this.editor.setSelectedLineIgnoreShapes("exceptTargets"), "line.ignore.exceptTargets");
+
+    const styleField = el("div", "unidraw-line-field", section);
+    el("div", "unidraw-text-field-label", styleField).setText(this.t("line.style"));
+    const styleTabs = el("div", "unidraw-line-style-tabs", styleField);
+    const styles: Array<{ id: "thin" | "bold" | "double" | "filled" | "ascii"; icon: string; label: MessageKey }> = [
+      { id: "thin", icon: "minus", label: "line.style.thin" },
+      { id: "bold", icon: "bold", label: "line.style.bold" },
+      { id: "double", icon: "equal", label: "line.style.double" },
+      { id: "ascii", icon: "terminal", label: "line.style.ascii" },
+      { id: "filled", icon: "paint-bucket", label: "line.style.filled" },
+    ];
+    for (const item of styles) {
+      const button = el("button", "unidraw-line-style-tab", styleTabs) as HTMLButtonElement;
+      button.type = "button";
+      button.toggleClass("is-active", lineStyle === item.id);
+      button.setAttribute("aria-label", this.t(item.label));
+      this.host.tooltip(button, this.t(item.label));
+      setIconSafe(this.host, el("span", "unidraw-line-style-icon", button), item.icon);
+      button.addEventListener("click", () => {
+        this.editor.setSelectedLineStyleMode(item.id);
+        this.updateStatus();
+      });
+    }
+
+    if (lineStyle === "thin" || lineStyle === "bold") {
+      const patternCard = el("div", "unidraw-line-subcard", section);
+      el("div", "unidraw-line-subcard-title", patternCard).setText(this.t("line.pattern"));
+      const grid = el("div", "unidraw-line-pattern-grid", patternCard);
+      const patterns: Array<{ id: "solid" | "dash2" | "dash3" | "dash4"; sample: string; label: MessageKey }> = [
+        { id: "solid", sample: "solid", label: "line.pattern.solid" },
+        { id: "dash2", sample: "dash2", label: "line.pattern.dash2" },
+        { id: "dash3", sample: "dash3", label: "line.pattern.dash3" },
+        { id: "dash4", sample: "dash4", label: "line.pattern.dash4" },
+      ];
+      for (const item of patterns) {
+        const button = el("button", "unidraw-line-pattern-option", grid) as HTMLButtonElement;
+        button.type = "button";
+        button.toggleClass("is-active", pattern === item.id);
+        button.setAttribute("aria-label", this.t(item.label));
+        this.host.tooltip(button, this.t(item.label));
+        el("span", `unidraw-line-pattern-sample is-${item.sample}`, button);
+        button.addEventListener("click", () => {
+          this.editor.setSelectedLinePattern(item.id);
+          this.updateStatus();
+        });
+      }
+    } else if (lineStyle === "filled") {
+      const fillCard = el("div", "unidraw-line-subcard", section);
+      el("div", "unidraw-line-subcard-title", fillCard).setText(this.t("line.fillChar"));
+      const fillRow = el("div", "unidraw-line-fill-row", fillCard);
+      const input = el("input", "unidraw-line-fill-input", fillRow) as HTMLInputElement;
+      input.type = "text";
+      input.maxLength = 2;
+      input.value = object.lineFillChar ?? "█";
+      input.addEventListener("change", () => {
+        this.editor.setSelectedLineFillChar(input.value);
+        this.updateStatus();
+      });
+    }
+
+    const checks = el("div", "unidraw-line-checks", section);
+    const toggle = (label: MessageKey, checked: boolean, onChange: (enabled: boolean) => void): HTMLInputElement => {
+      const row = el("label", "unidraw-line-check-row", checks);
+      const input = el("input", "unidraw-feature-check", row) as HTMLInputElement;
+      input.type = "checkbox";
+      input.checked = checked;
+      el("span", "unidraw-line-check-label", row).setText(this.t(label));
+      input.addEventListener("change", () => {
+        onChange(input.checked);
+        this.updateStatus();
+      });
+      return input;
+    };
+    toggle("line.arrowStart", object.arrowStart !== "none", (enabled) =>
+      this.editor.setSelectedLineArrowToggle("start", enabled),
+    );
+    if (object.arrowStart !== "none") this.buildLineArrowControls(checks, object, "start");
+    toggle("line.arrowEnd", object.arrowEnd !== "none", (enabled) =>
+      this.editor.setSelectedLineArrowToggle("end", enabled),
+    );
+    if (object.arrowEnd !== "none") this.buildLineArrowControls(checks, object, "end");
+    toggle("line.interrupt", object.interruptEnabled === true, (enabled) =>
+      this.editor.setSelectedLineInterruptEnabled(enabled),
+    );
+    if (object.interruptEnabled === true) {
+      const config = object.interrupt ?? { segment: 2, gap: 2, offset: 0 };
+      const fields: Array<{ key: "segment" | "gap" | "offset"; label: MessageKey; min: number; value: number }> = [
+        { key: "segment", label: "interrupt.segment", min: 1, value: config.segment },
+        { key: "gap", label: "interrupt.gap", min: 1, value: config.gap },
+        { key: "offset", label: "interrupt.offset", min: 0, value: config.offset },
+      ];
+      const grid = el("div", "unidraw-interrupt-grid unidraw-line-interrupt-grid", section);
+      for (const field of fields) {
+        const cell = el("label", "unidraw-interrupt-field", grid);
+        el("span", "unidraw-interrupt-label", cell).setText(this.t(field.label));
+        const input = el("input", "unidraw-interrupt-input", cell) as HTMLInputElement;
+        input.type = "number";
+        input.min = String(field.min);
+        input.value = String(field.value);
+        input.addEventListener("change", () => {
+          this.editor.setSelectedLineInterruptValue(field.key, Number(input.value));
+          this.updateStatus();
+        });
+      }
+    }
+  }
+
+  private buildLineArrowControls(
+    parent: HTMLElement,
+    object: Extract<DrawingObject, { kind: "line" }>,
+    which: "start" | "end",
+  ): void {
+    const card = el("div", "unidraw-line-arrow-card", parent);
+    const mode = which === "start" ? object.arrowStartMode ?? "adaptive" : object.arrowEndMode ?? "adaptive";
+    const tabs = el("div", "unidraw-line-arrow-tabs", card);
+    const tab = (id: "adaptive" | "custom", label: MessageKey): void => {
+      const button = el("button", "unidraw-line-arrow-tab", tabs) as HTMLButtonElement;
+      button.type = "button";
+      button.toggleClass("is-active", mode === id);
+      button.setText(this.t(label));
+      button.addEventListener("click", () => {
+        this.editor.setSelectedLineArrowMode(which, id);
+        this.updateStatus();
+      });
+    };
+    tab("adaptive", "line.arrowAdaptive");
+    tab("custom", "line.arrowCustom");
+
+    const body = el("div", "unidraw-line-arrow-body", card);
+    if (mode === "custom") {
+      const input = el("input", "unidraw-line-arrow-input", body) as HTMLInputElement;
+      input.type = "text";
+      input.maxLength = 2;
+      input.value = which === "start" ? object.arrowStartChar ?? "←" : object.arrowEndChar ?? "→";
+      input.setAttribute("aria-label", this.t("line.arrowCustom"));
+      input.addEventListener("change", () => {
+        this.editor.setSelectedLineArrowChar(which, input.value);
+        this.updateStatus();
+      });
+    } else {
+      const directions = el("div", "unidraw-line-arrow-directions", body);
+      for (const arrow of ["↑", "→", "↓", "←"]) el("span", "unidraw-line-arrow-direction", directions).setText(arrow);
+    }
+    const preview = el("div", "unidraw-line-arrow-preview", body);
+    preview.setText(this.lineArrowPreview(object, which));
+  }
+
+  private lineArrowPreview(
+    object: Extract<DrawingObject, { kind: "line" }>,
+    which: "start" | "end",
+  ): string {
+    const mode = which === "start" ? object.arrowStartMode ?? "adaptive" : object.arrowEndMode ?? "adaptive";
+    if (mode === "custom") return which === "start" ? object.arrowStartChar ?? "←" : object.arrowEndChar ?? "→";
+    const dr = object.y2 - object.y1;
+    const dc = object.x2 - object.x1;
+    if (dr === 0 && dc === 0) return which === "start" ? "←" : "→";
+    if (Math.abs(dr) >= Math.abs(dc)) {
+      const forward = dr >= 0 ? "↓" : "↑";
+      return which === "end" ? forward : forward === "↓" ? "↑" : "↓";
+    }
+    const forward = dc >= 0 ? "→" : "←";
+    return which === "end" ? forward : forward === "→" ? "←" : "→";
   }
 
   private buildRectFeatures(object: RectObject): void {
@@ -1502,8 +1512,49 @@ export class UnidrawEditorUI {
   }
 
   private buildGroupInspector(object: Extract<DrawingObject, { kind: "group" }>): void {
-    const section = this.inspectorSection(this.t("inspector.shape"));
-    el("div", "unidraw-inspector-note", section).setText(`${object.children.length} elements`);
+    const section = this.inspectorSection(this.t("element.type.group"));
+    el("div", "unidraw-inspector-note", section).setText(
+      this.t("element.children", { count: object.children.length }),
+    );
+
+    const renderField = el("div", "unidraw-group-field", section);
+    el("div", "unidraw-text-field-label", renderField).setText(this.t("group.renderMode"));
+    const renderGrid = el("div", "unidraw-group-choice-grid", renderField);
+    const mode = object.renderMode ?? "separate";
+    const option = (id: "separate" | "merge", label: MessageKey): void => {
+      const button = el("button", "unidraw-group-choice", renderGrid) as HTMLButtonElement;
+      button.type = "button";
+      button.toggleClass("is-active", mode === id);
+      button.setText(this.t(label));
+      button.addEventListener("click", () => {
+        this.editor.setGroupRenderMode(object.id, id);
+        this.updateStatus();
+      });
+    };
+    option("separate", "group.separate");
+    option("merge", "group.merge");
+
+    const save = el("button", "unidraw-group-template-btn", section) as HTMLButtonElement;
+    save.type = "button";
+    setIconSafe(this.host, el("span", "unidraw-group-template-icon", save), "layout-template");
+    el("span", "", save).setText(this.t("group.saveTemplate"));
+    save.addEventListener("click", () => {
+      void this.saveGroupAsTemplate(object);
+    });
+  }
+
+  private async saveGroupAsTemplate(object: Extract<DrawingObject, { kind: "group" }>): Promise<void> {
+    if (!this.host.saveGroupTemplate) {
+      this.showToastKey("group.templateFailed");
+      return;
+    }
+    const ok = await this.host.saveGroupTemplate({
+      version: 1,
+      name: object.name?.trim() || this.t("element.type.group"),
+      savedAt: new Date().toISOString(),
+      group: object,
+    });
+    this.showToastKey(ok ? "group.templateSaved" : "group.templateFailed");
   }
 
   private buildTextControls(parent: HTMLElement, object: RectObject): void {
@@ -1611,39 +1662,6 @@ export class UnidrawEditorUI {
     this.inlineStroke(row, value, onChange);
   }
 
-  private inspectorRoute(parent: HTMLElement, value: LineRoute, onChange: (route: LineRoute) => void): void {
-    const row = el("div", "unidraw-inspector-field", parent);
-    el("span", "unidraw-field-label", row).setText(this.t("inspector.route"));
-    const select = el("select", "unidraw-select", row) as HTMLSelectElement;
-    for (const route of ["straight", "diagonal", "elbow"] as LineRoute[]) {
-      const option = el("option", "", select) as HTMLOptionElement;
-      option.value = route;
-      option.textContent = this.t(`route.${route}` as MessageKey);
-    }
-    select.value = value;
-    select.addEventListener("change", () => onChange(select.value as LineRoute));
-  }
-
-  private inspectorArrow(
-    parent: HTMLElement,
-    which: "start" | "end",
-    value: ArrowStyle,
-    onChange: (style: ArrowStyle) => void,
-  ): void {
-    const row = el("div", "unidraw-inspector-field", parent);
-    el("span", "unidraw-field-label", row).setText(
-      which === "start" ? this.t("inspector.arrowStart") : this.t("inspector.arrowEnd"),
-    );
-    const select = el("select", "unidraw-select", row) as HTMLSelectElement;
-    for (const style of ["none", "line", "hollow", "solid"] as ArrowStyle[]) {
-      const option = el("option", "", select) as HTMLOptionElement;
-      option.value = style;
-      option.textContent = `${arrowGlyph(style)} ${this.t(`arrow.${style}` as MessageKey)}`;
-    }
-    select.value = value;
-    select.addEventListener("change", () => onChange(select.value as ArrowStyle));
-  }
-
   private inlineStroke(parent: HTMLElement, value: StrokeStyle, onChange: (style: StrokeStyle) => void): void {
     const seg = el("div", "unidraw-segmented", parent);
     for (const sample of STROKE_SAMPLES) {
@@ -1655,7 +1673,7 @@ export class UnidrawEditorUI {
     }
   }
 
-  private buildAlignControls(parent: HTMLElement): void {
+  private buildAlignControls(): void {
     const section = this.inspectorSection(this.t("inspector.align"));
     const alignGrid = el("div", "unidraw-inspector-icon-grid", section);
     const align = (icon: string, label: string, kind: "left" | "right" | "hcenter" | "vcenter" | "top" | "bottom"): void => {
@@ -1692,7 +1710,6 @@ export class UnidrawEditorUI {
   private openInlineTextEditor(request: TextEditRequest): void {
     this.closePopover();
     this.closeElementRowMenu();
-    this.textRequest = request;
     this.textModalEl?.remove();
     this.textCommit = null;
     const object = this.editor.getData().layers
@@ -1712,19 +1729,22 @@ export class UnidrawEditorUI {
     textarea.value = request.text;
     textarea.placeholder = this.t("text.placeholder");
     textarea.spellcheck = false;
-    textarea.style.left = `${Math.round(rect.left)}px`;
-    textarea.style.top = `${Math.round(rect.top)}px`;
-    textarea.style.width = `${Math.max(12, Math.round(rect.width))}px`;
-    textarea.style.height = `${Math.max(12, Math.round(rect.height))}px`;
-    textarea.style.paddingTop = `${Math.round(padding.top * cellH)}px`;
-    textarea.style.paddingRight = `${Math.round(padding.right * cellW)}px`;
-    textarea.style.paddingBottom = `${Math.round(padding.bottom * cellH)}px`;
-    textarea.style.paddingLeft = `${Math.round(padding.left * cellW)}px`;
     const fontSize = Math.max(8, Math.min(40, cellH * 0.78, cellW * 1.55));
-    textarea.style.fontSize = `${fontSize}px`;
-    textarea.style.lineHeight = `${Math.max(11, cellH)}px`;
-    textarea.style.textAlign = object.hAlign ?? "left";
-    if (object.direction === "vertical") textarea.style.writingMode = "vertical-rl";
+    const textareaStyles: Partial<CSSStyleDeclaration> = {
+      left: `${Math.round(rect.left)}px`,
+      top: `${Math.round(rect.top)}px`,
+      width: `${Math.max(12, Math.round(rect.width))}px`,
+      height: `${Math.max(12, Math.round(rect.height))}px`,
+      paddingTop: `${Math.round(padding.top * cellH)}px`,
+      paddingRight: `${Math.round(padding.right * cellW)}px`,
+      paddingBottom: `${Math.round(padding.bottom * cellH)}px`,
+      paddingLeft: `${Math.round(padding.left * cellW)}px`,
+      fontSize: `${fontSize}px`,
+      lineHeight: `${Math.max(11, cellH)}px`,
+      textAlign: object.hAlign ?? "left",
+    };
+    if (object.direction === "vertical") textareaStyles.writingMode = "vertical-rl";
+    textarea.setCssStyles(textareaStyles);
     // Match the canvas cell advance, not just the font size.
     const measureCanvas = document.createElement("canvas");
     const measure = measureCanvas.getContext("2d");
@@ -1732,7 +1752,7 @@ export class UnidrawEditorUI {
       const style = getComputedStyle(textarea);
       measure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
       const advance = measure.measureText("M").width;
-      if (advance > 0) textarea.style.letterSpacing = `${cellW - advance}px`;
+      if (advance > 0) textarea.setCssStyles({ letterSpacing: `${cellW - advance}px` });
     }
     const apply = (): void => {
       this.editor.confirmTextRequest(textarea.value, request.font);
@@ -1759,7 +1779,6 @@ export class UnidrawEditorUI {
   private closeTextModal(committed: boolean): void {
     this.textModalEl?.remove();
     this.textModalEl = null;
-    this.textRequest = null;
     this.textCommit = null;
     if (!committed) this.editor.cancelTextRequest();
     this.updateStatus();
@@ -1773,9 +1792,11 @@ export class UnidrawEditorUI {
     const popover = el("div", `unidraw-popover ${extraClass}`.trim(), this.popoverLayer);
     popover.appendChild(content);
     const rect = anchor.getBoundingClientRect();
-    popover.style.position = "fixed";
-    popover.style.visibility = "hidden";
-    popover.style.maxWidth = "calc(100vw - 24px)";
+    popover.setCssStyles({
+      position: "fixed",
+      visibility: "hidden",
+      maxWidth: "calc(100vw - 24px)",
+    });
     // Measure first, then clamp the whole popover into the viewport.
     const popoverWidth = popover.offsetWidth;
     const left = Math.max(12, Math.min(rect.left, window.innerWidth - popoverWidth - 12));
@@ -1785,10 +1806,12 @@ export class UnidrawEditorUI {
       top = Math.max(12, rect.top - Math.min(rect.top - 12, 520) - 6);
       available = window.innerHeight - top - 12;
     }
-    popover.style.left = `${left}px`;
-    popover.style.top = `${top}px`;
-    popover.style.maxHeight = `${Math.max(120, available)}px`;
-    popover.style.visibility = "visible";
+    popover.setCssStyles({
+      left: `${left}px`,
+      top: `${top}px`,
+      maxHeight: `${Math.max(120, available)}px`,
+      visibility: "visible",
+    });
     const onPointerDown = (event: PointerEvent) => {
       if (!popover.contains(event.target as Node) && event.target !== anchor) this.closePopover();
     };
@@ -1989,25 +2012,37 @@ export class UnidrawEditorUI {
     this.showToastKey("export.savedPng");
   }
 
-  exportTextFile(): void {
+  async exportTextFile(): Promise<void> {
     const text = this.editor.getArtText();
     if (!text) {
       this.showToastKey("export.empty");
+      return;
+    }
+    const filename = `${sanitizeFilename(this.host.getFileName())}.txt`;
+    if (this.host.saveTextExport) {
+      const ok = await this.host.saveTextExport(filename, text);
+      this.showToastKey(ok ? "export.savedTxt" : "export.exportFailed");
       return;
     }
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    downloadBlob(blob, `${sanitizeFilename(this.host.getFileName())}.txt`);
+    downloadBlob(blob, filename);
     this.showToastKey("export.savedTxt");
   }
 
-  exportMarkdownFile(): void {
+  async exportMarkdownFile(): Promise<void> {
     const text = this.editor.getArtText();
     if (!text) {
       this.showToastKey("export.empty");
       return;
     }
+    const filename = `${sanitizeFilename(this.host.getFileName())}.md`;
+    if (this.host.saveTextExport) {
+      const ok = await this.host.saveTextExport(filename, drawingToMarkdown(text));
+      this.showToastKey(ok ? "export.savedMd" : "export.exportFailed");
+      return;
+    }
     const blob = new Blob([drawingToMarkdown(text)], { type: "text/markdown;charset=utf-8" });
-    downloadBlob(blob, `${sanitizeFilename(this.host.getFileName())}.md`);
+    downloadBlob(blob, filename);
     this.showToastKey("export.savedMd");
   }
 
@@ -2059,7 +2094,7 @@ export class UnidrawEditorUI {
       el("div", "unidraw-help-shortcut-title", col).setText(title);
       return col;
     };
-    const keys = keyCombos();
+    const keys = keyCombos(this.host.isMac());
     const row = (col: HTMLElement, key: string, label: string): void => {
       const line = el("div", "unidraw-help-shortcut-row", col);
       el("span", "unidraw-help-keys", line).setText(key);
@@ -2118,10 +2153,11 @@ export class UnidrawEditorUI {
     el("span", "unidraw-toast-text", toast).setText(this.t(key, vars));
     window.requestAnimationFrame(() => toast.addClass("is-visible"));
     const timer = window.setTimeout(() => {
+      this.toastTimers.delete(timer);
       toast.removeClass("is-visible");
       window.setTimeout(() => toast.remove(), 180);
     }, 1600);
-    this.toastTimers.push(timer);
+    this.toastTimers.add(timer);
   }
 
   // --------------------------------------------------------------- commands
@@ -2267,11 +2303,13 @@ export class UnidrawEditorUI {
 
   private openPopoverAt(x: number, y: number, content: HTMLElement, extraClass = ""): void {
     const anchor = el("div", "unidraw-popover-anchor");
-    anchor.style.position = "fixed";
-    anchor.style.left = `${x}px`;
-    anchor.style.top = `${y}px`;
-    anchor.style.width = "0";
-    anchor.style.height = "0";
+    anchor.setCssStyles({
+      position: "fixed",
+      left: `${x}px`,
+      top: `${y}px`,
+      width: "0",
+      height: "0",
+    });
     this.popoverLayer.appendChild(anchor);
     this.openPopover(anchor, content, extraClass);
     anchor.remove();

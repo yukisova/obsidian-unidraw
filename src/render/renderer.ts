@@ -1,6 +1,6 @@
 import type { DrawingDocument } from "../core/document";
 import { WIDE_CONT } from "../core/document";
-import type { CellPos, EditorSettings, GridMode, SelectionRect, ToolId } from "../core/types";
+import type { CellPos, EditorSettings, SelectionRect, ToolId } from "../core/types";
 import { FONT_STACKS } from "../core/types";
 import { graphemeWidth } from "../core/unicode";
 import { paintGlyphVector } from "./glyph-painter";
@@ -313,7 +313,7 @@ export class CanvasRenderer {
 
   private resizeCanvas(): void {
     const rect = this.stage.getBoundingClientRect();
-    this.dpr = Math.min(3, window.devicePixelRatio || 1);
+    this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.cssW = Math.max(1, Math.round(rect.width));
     this.cssH = Math.max(1, Math.round(rect.height));
     const targetW = Math.round(this.cssW * this.dpr);
@@ -322,8 +322,10 @@ export class CanvasRenderer {
       if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.width = targetW;
         canvas.height = targetH;
-        canvas.style.width = `${this.cssW}px`;
-        canvas.style.height = `${this.cssH}px`;
+        canvas.setCssStyles({
+          width: `${this.cssW}px`,
+          height: `${this.cssH}px`,
+        });
         this.staticDirty = true;
         this.overlayDirty = true;
         this.previewDirty = true;
@@ -637,7 +639,6 @@ export class CanvasRenderer {
     ctx.save();
     ctx.font = `600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
     const paddingX = 8;
-    const paddingY = 5;
     const width = ctx.measureText(label).width + paddingX * 2;
     const height = 22;
     let x = point.x + 16;

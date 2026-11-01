@@ -19,10 +19,12 @@ export interface ArtFrameOptions {
  */
 export function renderArtFrame(host: HTMLElement, options: ArtFrameOptions): HTMLElement {
   const frame = host.createDiv({ cls: "unidraw-embed" });
-  frame.style.setProperty("--unidraw-embed-font-size", `${options.settings.embedFontSize}px`);
-  frame.style.setProperty("--unidraw-embed-line-height", String(options.settings.embedLineHeight));
+  frame.setCssProps({
+    "--unidraw-embed-font-size": `${options.settings.embedFontSize}px`,
+    "--unidraw-embed-line-height": String(options.settings.embedLineHeight),
+  });
   const stack = FONT_STACKS[options.settings.fontFamily];
-  if (stack) frame.style.setProperty("--unidraw-embed-font", stack);
+  if (stack) frame.setCssProps({ "--unidraw-embed-font": stack });
 
   const bar = frame.createDiv({ cls: "unidraw-embed-bar" });
   const label = bar.createSpan({ cls: "unidraw-embed-label", text: options.label });

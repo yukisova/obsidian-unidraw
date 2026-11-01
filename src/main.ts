@@ -44,7 +44,7 @@ export default class UnidrawPlugin extends Plugin {
     this.registerView(VIEW_TYPE_UNIDRAW, (leaf: WorkspaceLeaf) => new UnidrawView(leaf, this));
     this.registerExtensions([FILE_EXTENSION], VIEW_TYPE_UNIDRAW);
 
-    this.addRibbonIcon("pencil", this.t("command.new"), () => void this.createDrawing());
+    this.addRibbonIcon("pencil-ruler", this.t("command.new"), () => void this.createDrawing());
 
     this.registerCommands();
     this.registerProcessors();
@@ -229,7 +229,7 @@ export default class UnidrawPlugin extends Plugin {
       new Notice(this.t("notice.saveFailed"));
       return;
     }
-    const leaf = this.app.workspace.getLeaf("tab");
+    const leaf = this.app.workspace.getLeaf(true);
     await leaf.setViewState({
       type: VIEW_TYPE_UNIDRAW,
       state: { file: file.path },

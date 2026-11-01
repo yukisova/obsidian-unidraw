@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.4.8 (2026-11-01)
+
+- Fixed long-session rendering artifacts in Obsidian chrome by removing
+  `backdrop-filter` and persistent card animations, isolating the view paint,
+  capping canvas DPR at 2 and pruning toast timers.
+
+## 0.4.7 (2026-11-01)
+
+- Architecture cleanup: removed the unused layer panel, old stylebar/line
+  inspector helpers and their APIs, dead drawing helpers, unused fields and
+  imports.
+- Enabled `noUnusedLocals` / `noUnusedParameters`.
+- Removed roughly 21 KB of unreachable CSS and all plugin CSS classes with no
+  source reference.
+
+## 0.4.6 (2026-11-01)
+
+- Changed the ribbon icon to `pencil-ruler`.
+- Removed the toolbar grid-size selector and fixed the grid at 16 px.
+- Restored text exports: clipboard fallback is synchronous and text/Markdown
+  files save into the drawing's vault folder.
+
+## 0.4.5 (2026-11-01)
+
+- Linked line endpoints now accept a one-cell edge tolerance.
+- Groups can be renamed, saved as JSON templates and switched between separate
+  and merge intersection rendering.
+
+## 0.4.4 (2026-11-01)
+
+- Reworked 8-way direct line paths into a centered diagonal/axis/diagonal
+  polyline, eliminating adjacent parallel diagonal glyphs on shallow or steep
+  lines.
+
+## 0.4.3 (2026-11-01)
+
+- Added adaptive/custom arrow subcards for enabled line start/end arrows.
+- Adaptive arrows use the four cardinal directions; start arrows point
+  outward, opposite the end arrow at the same endpoint.
+
+## 0.4.2 (2026-11-01)
+
+- Reordered the line inspector into routing, avoidance, line type, conditional
+  style/fill and end checkboxes.
+- Added solid/dash-2/dash-3/dash-4 line-pattern presets for Straight and Bold.
+- Moved Start/End/Interrupt to the bottom of the line card.
+
+## 0.4.1 (2026-11-01)
+
+- Removed the contextual tool-property bar below the toolbar. Tool settings
+  now live in the selected-element inspector, with tool hints kept in the
+  status bar.
+
+## 0.4.0 (2026-11-01)
+
+- Rebuilt the line inspector around routing direction, five line styles,
+  interruption, independent start/end arrows and shape-ignore modes.
+- Lines auto-link to shapes under their endpoints; linked endpoints follow
+  shape moves and resizes.
+- Added 4-way/8-way routing and obstacle-aware pathfinding using full shape
+  bounds, with endpoint cells exempt.
+
+## 0.2.20 (2026-11-01)
+
+- Fixed Obsidian plugin lint findings: manifest description wording, safe SVG
+  insertion, Platform API for OS shortcuts, CSS-helper style assignment,
+  `Setting` headings and the minimum-version-compatible `getLeaf(true)` call.
+
 ## 0.2.19 (2026-11-01)
 
 - Added an optional Interrupt feature for rectangle borders with segment

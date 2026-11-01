@@ -23,6 +23,7 @@ import {
   type UnidrawData,
 } from "../src/core/objects";
 import { renderObject } from "../src/model/rasterize";
+import { computeLinePath } from "../src/model/line-path";
 import { eq, ok, test } from "./harness";
 
 function line(partial: Partial<LineObject> = {}): LineObject {
@@ -179,16 +180,15 @@ test("locked layers cannot be merged", () => {
 test("line routes and arrow styles render", () => {
   const dict = new DrawingDocument(30, 12);
   renderObject(dict, line({ x1: 1, y1: 1, x2: 20, y2: 1, arrowEnd: "solid" }));
-  eq(dict.charAt(1, 20), "▶");
+  eq(dict.charAt(1, 20), "→");
   eq(dict.charAt(1, 1), "╶");
   const elbow = new DrawingDocument(16, 10);
   renderObject(elbow, line({ x1: 1, y1: 1, x2: 10, y2: 6, route: "elbow" }));
-  eq(elbow.charAt(1, 10), "┐");
-  eq(elbow.charAt(6, 10), "╵");
+  eq(elbow.charAt(1, 5), "┐");
+  eq(elbow.charAt(6, 5), "└");
   const diagonal = new DrawingDocument(20, 12);
   renderObject(diagonal, line({ x1: 1, y1: 1, x2: 14, y2: 7, route: "diagonal" }));
   ok(diagonal.toText().includes("╲") || diagonal.toText().includes("╱"));
-  ok(diagonal.toText().includes("─"));
 });
 
 test("text objects align, wrap, clip and turn vertical", () => {
@@ -551,4 +551,130 @@ test("interrupted rectangle borders follow segment, gap and offset", () => {
   const offset = make(2, 2, 1);
   ok(offset.includes(" ──  ──  ┐"));
   ok(offset.includes("└─  ──  ─┘"));
+});
+
+
+test("line routing modes, styles, interruption and arrows", () => {
+  const four = new DrawingDocument(20, 12);
+  renderObject(four, line({ x1: 1, y1: 1, x2: 8, y2: 5, routing: "4way", lineStyle: "thin" }));
+  const fourText = four.toText();
+  ok(!fourText.includes("╲") && !fourText.includes("╱"));
+  ok(fourText.includes("┐"));
+
+  const eight = new DrawingDocument(20, 12);
+  renderObject(eight, line({ x1: 1, y1: 1, x2: 8, y2: 5, routing: "8way", lineStyle: "thin" }));
+  ok(/[╲╱]/.test(eight.toText()));
+
+  const bold = new DrawingDocument(20, 5);
+  renderObject(bold, line({ x1: 1, y1: 1, x2: 10, y2: 1, lineStyle: "bold", style: "heavy" }));
+  ok(bold.toText().includes("━"));
+
+  const doubled = new DrawingDocument(20, 5);
+  renderObject(doubled, line({ x1: 1, y1: 1, x2: 10, y2: 1, lineStyle: "double", style: "double" }));
+  ok(doubled.toText().includes("═"));
+
+  const filled = new DrawingDocument(20, 5);
+  renderObject(filled, line({ x1: 1, y1: 1, x2: 10, y2: 1, lineStyle: "filled", lineFillChar: "▓" }));
+  ok(filled.toText().includes("▓▓▓"));
+
+  const ascii = new DrawingDocument(20, 5);
+  renderObject(ascii, line({ x1: 1, y1: 1, x2: 10, y2: 1, lineStyle: "ascii", style: "ascii" }));
+  ok(ascii.toText().includes("--"));
+
+  const interrupted = new DrawingDocument(20, 5);
+  renderObject(interrupted, line({
+    x1: 1,
+    y1: 1,
+    x2: 10,
+    y2: 1,
+    interruptEnabled: true,
+    interrupt: { segment: 2, gap: 2, offset: 0 },
+  }));
+  const interruptedRow = interrupted.toText().split("\n")[1] ?? "";
+  ok(interruptedRow.includes("──"));
+  ok(interruptedRow.includes("  "));
+
+  const arrows = new DrawingDocument(20, 5);
+  renderObject(arrows, line({ x1: 1, y1: 1, x2: 10, y2: 1, arrowStart: "line", arrowEnd: "solid" }));
+  ok(arrows.toText().includes("←"));
+  ok(arrows.toText().includes("→"));
+});
+
+test("line obstacle modes use full shape bounds and endpoint exemptions", () => {
+  const box = { id: "box", x: 4, y: 1, w: 3, h: 5 };
+  const base = line({ x1: 1, y1: 3, x2: 10, y2: 3, routing: "4way", ignoreShapes: "all" });
+  const direct = computeLinePath(base, [box]);
+  ok(direct.some((cell) => cell.col >= 4 && cell.col <= 6));
+
+  const avoiding = computeLinePath({ ...base, ignoreShapes: "none" }, [box]);
+  ok(!avoiding.some((cell) => cell.row >= 1 && cell.row <= 4 && cell.col >= 4 && cell.col <= 6));
+
+  const except = computeLinePath({ ...base, ignoreShapes: "exceptTargets", startTargetId: "box" }, [box]);
+  ok(!except.some((cell) => cell.row >= 1 && cell.row <= 4 && cell.col >= 4 && cell.col <= 6));
+});
+
+test("line pattern presets switch the thin and bold dash families", () => {
+  const thin = new DrawingDocument(24, 5);
+  renderObject(thin, line({ x1: 1, y1: 1, x2: 14, y2: 1, lineStyle: "thin", linePattern: "dash2" }));
+  ok(thin.toText().includes("╌"));
+  const bold = new DrawingDocument(24, 5);
+  renderObject(bold, line({ x1: 1, y1: 1, x2: 14, y2: 1, lineStyle: "bold", linePattern: "dash3" }));
+  ok(bold.toText().includes("┅"));
+});
+
+
+test("line adaptive arrows are cardinal and start/end point opposite", () => {
+  const horizontal = new DrawingDocument(24, 6);
+  renderObject(horizontal, line({ x1: 2, y1: 2, x2: 12, y2: 2, arrowStart: "line", arrowEnd: "line", arrowStartMode: "adaptive", arrowEndMode: "adaptive" }));
+  eq(horizontal.charAt(2, 2), "←");
+  eq(horizontal.charAt(2, 12), "→");
+
+  const vertical = new DrawingDocument(12, 16);
+  renderObject(vertical, line({ x1: 3, y1: 1, x2: 3, y2: 12, arrowStart: "line", arrowEnd: "line" }));
+  eq(vertical.charAt(1, 3), "↑");
+  eq(vertical.charAt(12, 3), "↓");
+
+  const custom = new DrawingDocument(24, 6);
+  renderObject(custom, line({
+    x1: 2,
+    y1: 2,
+    x2: 12,
+    y2: 2,
+    arrowStart: "line",
+    arrowEnd: "line",
+    arrowStartMode: "custom",
+    arrowEndMode: "custom",
+    arrowStartChar: "★",
+    arrowEndChar: "✦",
+  }));
+  eq(custom.charAt(2, 2), "★");
+  eq(custom.charAt(2, 12), "✦");
+});
+
+test("8-way direct lines avoid adjacent parallel diagonal glyphs", () => {
+  const doc = new DrawingDocument(24, 12);
+  renderObject(doc, line({ x1: 1, y1: 1, x2: 15, y2: 9, routing: "8way", lineStyle: "thin" }));
+  const art = doc.toText();
+  ok(art.includes("╲─────╲"));
+  ok(!/[╲╱]{2}/.test(art));
+});
+
+test("group intersection rendering switches between separate and merge", () => {
+  const makeGroup = (mode: "separate" | "merge"): UnidrawData => {
+    const data = createDefaultData(14, 10);
+    const horizontal = line({ id: "h", x1: 1, y1: 3, x2: 11, y2: 3 });
+    const vertical = line({ id: "v", x1: 6, y1: 1, x2: 6, y2: 8 });
+    data.layers[0].objects.push({
+      id: `group-${mode}`,
+      kind: "group",
+      name: "Cross",
+      renderMode: mode,
+      children: [horizontal, vertical],
+    });
+    return data;
+  };
+  const separate = composedText(makeGroup("separate"));
+  const merged = composedText(makeGroup("merge"));
+  ok(!separate.includes("┼"));
+  ok(merged.includes("┼"));
 });

@@ -26,7 +26,7 @@ Obsidian view with JSON `.unidraw` element files.
 | **Real element selection** | Click an element, drag it, resize it from its corner handles, marquee several elements, Ctrl-click to add or remove, and align or distribute a multi-selection. |
 | **Global doodle & groups** | Every frame starts with a global doodle pinned below all elements. It is never hit by clicks; press **Esc** to select it and draw into it. It has no handles or inspector card. Convert selected elements into a doodle, merge them into the global doodle, or group them. |
 | **Unicode accuracy** | One grapheme per cell; CJK, emoji, combining marks and wide characters occupy the correct columns. |
-| **Smart character lines** | Grid-snapped endpoints, three routing modes, start/end arrow styles, and clean corners inside each line. Separate elements stack in z-order instead of merging into `┼`/`╬` crossings. |
+| **Smart character lines** | Grid-snapped endpoints, 4-way/8-way routing, five line styles, interruption, independent start/end arrows, and obstacle-aware pathfinding. Endpoints auto-link to shapes. |
 | **Rectangle features** | Rectangles expose optional **Text**, **Fill**, **Border** and **Interrupt** checkboxes. Each enabled feature reveals its own nested card: text layout, fill mode/swatch, stroke, or an interrupted border pattern. |
 | **Element list actions** | Icon buttons toggle visibility and locking; right-click a row for duplicate/delete. Global doodle rows can clear their contents. |
 | **Obsidian-native** | JSON `.unidraw` element files, `![[drawing.unidraw]]` embeds, `unidraw` code blocks, commands, ribbon action, autosave, theme-aware UI and settings. |
@@ -50,7 +50,7 @@ Obsidian view with JSON `.unidraw` element files.
 
 ### From the release package
 
-Build or download `dist/unidraw-0.2.19/unidraw-0.2.19.zip`. Unzip it so that
+Build or download `dist/unidraw-0.4.8/unidraw-0.4.8.zip`. Unzip it so that
 `main.js`, `manifest.json` and `styles.css` live inside:
 
 ```text
@@ -92,14 +92,23 @@ current build.
 
 - **Tool areas** — operation (Select, Pan), shapes (Line, Rectangle, Diamond,
   Ellipse), and drawing (Pencil, Rectangle fill, Fill). Text is a rectangle feature, not a tool.
-- **Right element list card** — every element in top-to-bottom z-order with a type-specific icon. Click a row to select it; Ctrl/Cmd-click toggles individual rows, Shift-click selects a range, and dragging a row changes its z-index. Icon-only eye and lock buttons toggle visibility and locking. The global doodle has no lock button. The global doodle is shown at the bottom and is Esc-only.
+- **Right element list card** — every element in top-to-bottom z-order with a type-specific icon. Drag any row directly to change its z-index; selection is not required. Groups have a chevron and expand into indented child rows, where children can be shown/hidden, locked and dragged to adjust their z-index inside the group. Click a row to select it; Ctrl/Cmd-click toggles, Shift-click selects a range. Icon-only eye and lock buttons toggle visibility and locking. The global doodle has no lock button and stays at the bottom.
+- **Group inspector** — rename the group directly in the inspector title, switch
+  **Separate / Merge** intersection rendering, or save the group as a JSON
+  template. Templates are appended to `group-templates.json` in the plugin
+  directory.
 - **Left element card** — type-specific icon and title, an icon-only z-order area, an icon-only conversion area, shape/text properties, and icon-only duplicate/delete/edit actions. Visibility and lock controls live in the right element list.
 - **Canvas** — grid-snapped character art built from three stacked canvases:
   **StaticCanvas** (committed elements in z-order), **InteractiveCanvas**
   (selection boxes, handles, marquee and hover) and **NewElementCanvas**
   (the temporary element being drawn or moved).
-- **Contextual style bar** — stroke, routing, arrow styles, text font and
-  character pickers for the active tool.
+- **No contextual style bar** — tool settings live in the selected-element
+  inspector; the status bar keeps the current tool hint. Pencil, filled-rectangle
+  and fill tools show a small drawing-character card above the inspector even
+  when nothing is selected.
+- **Shape tools** switch back to the Select tool after a shape is created. The
+  Select tool's first click only selects; moving starts on the following drag.
+  Dragging with no selection marquee-selects.
 
 ## Tools
 
@@ -134,35 +143,64 @@ current build.
 
 - Right-dragging a tool performs its erase/arrow action.
 - Ctrl/⌘-click an object to add or remove it from the selection.
-- The line toolbar has independent **start** and **end** arrow styles:
-  none, single line, hollow or solid.
+- **Start** and **End** arrows are independent checkboxes in the line card.
+  Enabling one reveals its arrow subcard.
+- The adaptive arrow follows the line's direction using four cardinal arrows;
+  the start arrow points outward, opposite the end arrow at the same endpoint.
+- The custom mode uses any character entered in the arrow subcard.
 - Endpoints snap to the character grid.
 
 ## Lines
 
-The line object supports three routing modes:
+The line object supports two routing modes:
 
-- **Straight** — a direct line between the two snapped endpoints.
-- **Diagonal + horizontal** — a 45° diagonal segment followed by a horizontal
-  or vertical segment to the endpoint.
-- **Elbow** — a two-segment right-angle connector.
+- **4-way** — every step is horizontal or vertical, with the middle
+  vertical/horizontal segment centered so the line enters the endpoint along
+  the final axis instead of always making an L at the end.
+- **8-way** — diagonal steps are allowed alongside horizontal/vertical steps.
 
-The line style (light, heavy, double, rounded, dashed, ASCII) applies to the
-whole object. Corners within one line are drawn cleanly. Separate elements do
-not merge with each other: a later overlapping shape simply prints on top, so
-crossings never turn into `┼`/`╬` glyphs.
+Corners within one line are drawn cleanly. Separate elements do not merge with
+each other: a later overlapping shape simply prints on top, so crossings never
+turn into `┼`/`╬` glyphs.
 
-Select a line to edit its style, route and start/end arrow styles in the left
-inspector.
+Select a line to edit its routing, style, interruption, arrows and shape
+ignoring in the left inspector.
+
+![Line inspector](docs/screenshots/unidraw-line-tool.png)
+
+![Adaptive and custom line arrows](docs/screenshots/unidraw-line-arrows.png)
+
+### Line settings
+
+- **Routing direction**: **4-way** keeps every step horizontal/vertical;
+  **8-way** also allows diagonals. Direct 8-way lines use a centered
+  diagonal/axis/diagonal polyline so parallel `╲╲` runs are avoided.
+
+![Clean 8-way line](docs/screenshots/unidraw-eight-way.png)
+- **Avoidance**: **Ignore all**, **Avoid all** or **Targets only**.
+- **Line type**: **Straight / Bold / Double / ASCII / Filled**. Bold uses the
+  heavy box-drawing family; Double uses the double-line family; Filled draws
+  the path with a chosen character.
+- **Line style**: for Straight and Bold, choose **Solid / Dash 2 / Dash 3 /
+  Dash 4**.
+- **Checkboxes at the bottom**: **Start**, **End** and **Interrupt**.
+  Enabled Start/End arrows reveal an **Adaptive arrow / Custom character**
+  subcard. The interrupt fields use the same segment/gap/offset configuration
+  as rectangle borders.
+- A line endpoint dropped on or within one cell of a shape edge automatically
+  links to that shape. The linked endpoint stays on the shape edge and follows
+  moves or resizes. New lines start in **Do not ignore** mode, so obstacle
+  avoidance is active while the link is maintained.
 
 ## Rectangle features and text
 
-Text is no longer a separate element kind. Every rectangle has three optional
+Text is no longer a separate element kind. Every rectangle has four optional
 features in its element-specific card:
 
 - **Text** — a label inside the rectangle.
 - **Fill** — an empty or character fill that covers the rectangle interior.
 - **Border** — the rectangle outline and stroke style.
+- **Interrupt** — a segmented border pattern.
 
 New rectangles start with **Border** on. Text is enabled with the **Text**
 checkbox, by pressing **Enter**, or by double-clicking an existing label; there
@@ -323,7 +361,7 @@ Everything drawn on the frame is an **element**:
 
 ## Grid, canvas and view
 
-- Grid size options: **4, 8, 12 and 16 px** character cells.
+- Fixed **16 px** character cells; the grid-size selector has been removed.
 - Toggle grid lines from the toolbar; the setting is saved with the plugin.
 - The canvas has no fixed edge in normal use: objects expand it as needed.
 - Minimum canvas width and height are stored per drawing.
@@ -403,20 +441,22 @@ The **Export** menu offers:
 - **Copy as image** — PNG to the clipboard where supported.
 - **Export PNG** — theme-coloured PNG at 2× resolution.
 - **Export transparent PNG** — transparent background.
-- **Export text file** — `.txt`.
-- **Export Markdown file** — `.md` with a fenced art block.
+- **Export text file** — saves `.txt` beside the current drawing (downloads in
+  the standalone demo).
+- **Export Markdown file** — saves `.md` with a fenced art block beside the
+  current drawing.
 - **Insert into active note** — inserts a fenced block at the cursor.
 
-The current release lives in **`dist/unidraw-0.2.19/`**: the three plugin
-files plus `unidraw-0.2.19.zip`. Previous releases are kept compressed in
-**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/` … `unidraw-0.2.18/`).
+The current release lives in **`dist/unidraw-0.4.8/`**: the three plugin
+files plus `unidraw-0.4.8.zip`. Previous releases are kept compressed in
+**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/` … `unidraw-0.4.7/`).
 
 ## Settings
 
 Open **Settings → Unidraw** for:
 
 - Interface language (automatic, English, Chinese).
-- Grid size (4/8/12/16 px).
+- Fixed grid size: 16 px.
 - Canvas font family and line height.
 - Grid style (dots/lines/off).
 - Default stroke, default text style and pencil character.
@@ -447,7 +487,7 @@ src/
   glyphs/     box-drawing tables, strokes, fills, Unicode typefaces
   editor/     tool state machine, element selection, transforms, z-order, undo
   render/     three stacked canvases, previews, theme colours, PNG export
-  ui/         toolbar, style bar, left element inspector, context menus, popovers
+  ui/         toolbar, left element inspector, context menus, popovers
   view/       Obsidian ItemView and reading-mode embeds
   main.ts     plugin entry, commands, processors, settings tab
   settings.ts settings schema and settings UI
@@ -471,15 +511,15 @@ font directly, so they can show tiny seams depending on the installed font.
 npm install
 npm run dev          # watch mode, bundles main.js
 npm run build        # type-check, bundle, zip and package dist/
-npm test             # 53 unit tests for the grid, elements, fills and shapes
+npm test             # 59 unit tests for the grid, elements, fills and shapes
 npm run demo         # build the browser demo
 npm run screenshot   # capture the documentation screenshots (Chrome required)
 npm run link -- /path/to/vault
 ```
 
-`npm run build` produces `dist/unidraw-0.2.19/main.js`,
-`dist/unidraw-0.2.19/manifest.json`, `dist/unidraw-0.2.19/styles.css` and
-`dist/unidraw-0.2.19/unidraw-0.2.19.zip`, while leaving `dist/backup/` untouched.
+`npm run build` produces `dist/unidraw-0.4.8/main.js`,
+`dist/unidraw-0.4.8/manifest.json`, `dist/unidraw-0.4.8/styles.css` and
+`dist/unidraw-0.4.8/unidraw-0.4.8.zip`, while leaving `dist/backup/` untouched.
 
 The screenshot script uses `CHROME_PATH` if set, otherwise the macOS Chrome
 location, and drives Chrome through the DevTools Protocol with a temporary
