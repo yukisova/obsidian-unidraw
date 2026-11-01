@@ -1,0 +1,447 @@
+# Unidraw
+
+**An element-based Unicode character-art studio for Obsidian.**
+
+Unidraw combines the grid-first spirit of [ASCII Canvas](#credits), the smart
+line drawing of [asciiflow](https://asciiflow.com/), and the object, element and
+text workflow of [Monodraw](https://monodraw.helftone.com/) — in a native
+Obsidian view with JSON `.unidraw` element files.
+
+<p align="center">
+  <img src="docs/screenshots/unidraw-overview-dark.png" width="100%" alt="Unidraw element editor, dark theme" />
+</p>
+
+<p align="center">
+  <a href="README.zh-CN.md">中文说明 →</a>
+</p>
+
+---
+
+## Highlights
+
+| | |
+| --- | --- |
+| **Elements & z-order** | Rectangles, ellipses, diamonds, lines, doodles and groups are independent elements. Every element has its own z-order, visibility and lock state, and can be selected, moved, resized and deleted. |
+| **Excalidraw-style workspace** | Selecting an element opens the element inspector on the left. The canvas is built from three stacked canvases: static art, interactive selection and the new element being drawn. |
+| **Real element selection** | Click an element, drag it, resize it from its corner handles, marquee several elements, Ctrl-click to add or remove, and align or distribute a multi-selection. |
+| **Global doodle & groups** | Every frame starts with a global doodle pinned below all elements. It is never hit by clicks; press **Esc** to select it and draw into it. It has no handles or inspector card. Convert selected elements into a doodle, merge them into the global doodle, or group them. |
+| **Unicode accuracy** | One grapheme per cell; CJK, emoji, combining marks and wide characters occupy the correct columns. |
+| **Smart character lines** | Grid-snapped endpoints, three routing modes, start/end arrow styles, and clean corners inside each line. Separate elements stack in z-order instead of merging into `┼`/`╬` crossings. |
+| **Rectangle features** | Rectangles expose optional **Text**, **Fill** and **Border** checkboxes. Each enabled feature reveals its own nested card: text layout, fill mode/swatch, or stroke. |
+| **Right-click element menu** | Convert to a doodle, merge into the global doodle, group, delete, show/hide and lock selected elements. Right-click empty canvas to show all hidden or unlock all elements. |
+| **Obsidian-native** | JSON `.unidraw` element files, `![[drawing.unidraw]]` embeds, `unidraw` code blocks, commands, ribbon action, autosave, theme-aware UI and settings. |
+| **No runtime dependencies** | The plugin has no network calls and ships no fonts or external runtime libraries. |
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/unidraw-overview-light.png" width="49%" alt="Light theme" />
+  <img src="docs/screenshots/unidraw-selection.png" width="49%" alt="Object selection and inspector" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/unidraw-characters.png" width="49%" alt="Unicode character palette" />
+  <img src="docs/screenshots/unidraw-templates.png" width="49%" alt="Drawing templates" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/unidraw-help.png" width="100%" alt="Help and keyboard shortcuts" />
+</p>
+
+## Installation
+
+### From the release package
+
+Build or download `dist/unidraw-0.2.8/unidraw-0.2.8.zip`. Unzip it so that
+`main.js`, `manifest.json` and `styles.css` live inside:
+
+```text
+<your-vault>/.obsidian/plugins/unidraw/
+```
+
+Then restart Obsidian, open **Settings → Community plugins**, disable Restricted
+Mode if necessary, and enable **Unidraw**.
+
+Unidraw requires **Obsidian 1.5.0 or newer**. It is not desktop-only; the
+right-click tools use pointer buttons, so a desktop or mouse is recommended for
+all features.
+
+### From source
+
+```bash
+npm install
+npm run build          # type-check, bundle, dist/ and release zip
+npm run link -- "/path/to/vault"
+```
+
+`npm run link` creates the plugin folder link and lets Obsidian reload the
+current build.
+
+## Quick start
+
+1. Run **Unidraw: New drawing** from the command palette, or click the ribbon
+   pencil.
+2. Pick a tool, then drag on the canvas. Elements are created as you go;
+   drawings autosave.
+3. New elements are placed on top of the frame. Use the left element
+   inspector to adjust z-order, visibility and lock state.
+4. Click an element with **Select**. Its bounding box and corner handles appear,
+   and the property inspector opens on the left.
+5. Use **Export** for PNG, transparent PNG, text, Markdown, or to insert the
+   drawing into the active note.
+
+## Workspace
+
+- **Tool areas** — operation (Select, Pan), shapes (Line, Rectangle, Diamond,
+  Ellipse), and drawing (Pencil, Rectangle fill, Fill). Text is a rectangle feature, not a tool.
+- **Right element list card** — every element in top-to-bottom z-order with a type-specific icon. Click a row to select it; Ctrl/Cmd-click toggles individual rows, Shift-click selects a range, and dragging a row changes its z-index. Icon-only eye and lock buttons toggle visibility and locking. The global doodle has no lock button. The global doodle is shown at the bottom and is Esc-only.
+- **Left element card** — type-specific icon and title, an icon-only z-order area, an icon-only conversion area, shape/text properties, and icon-only duplicate/delete/edit actions. Visibility and lock controls live in the right element list.
+- **Canvas** — grid-snapped character art built from three stacked canvases:
+  **StaticCanvas** (committed elements in z-order), **InteractiveCanvas**
+  (selection boxes, handles, marquee and hover) and **NewElementCanvas**
+  (the temporary element being drawn or moved).
+- **Contextual style bar** — stroke, routing, arrow styles, text font and
+  character pickers for the active tool.
+
+## Tools
+
+| Tool | Shortcut | Left drag / click | Right drag / click |
+| --- | --- | --- | --- |
+| Select | `V` | Marquee empty canvas; click an element to select; drag to move | Drag to scale the selection; a right-click without dragging opens the element menu |
+| Pan | `H` | Drag to pan | Drag a red box to select text; releasing copies a fenced code block |
+| Pencil | `B` | Draw the current character | Erase cells |
+| Line | `L` | Draw a line | Draw an arrow |
+| Outline rectangle | `R` | Draw a rectangle border | Erase the border |
+| Rectangle fill | `Shift+R` | Fill a rectangular area with the current character | Erase the whole area |
+| Fill | `G` | Flood-fill the contiguous region | Clear the same-character region |
+| Ellipse | `O` | Draw an aspect-corrected ellipse | Erase the ellipse area |
+| Diamond | `D` | Draw a diamond | Erase the diamond area |
+
+### Keyboard and view
+
+- **Wheel** — zoom around the pointer.
+- **Ctrl/⌘ + wheel** — scroll vertically.
+- **Ctrl/⌘ + Shift + wheel** — scroll horizontally.
+- Hold **Space** to temporarily switch to the Pan tool; **middle-button drag** also pans. Release Space to return to the previous tool.
+- **Ctrl/⌘ + A** — select every element in the frame.
+- **Ctrl/⌘ + C / X / V** — copy, cut and paste objects.
+- **Delete / Backspace** — delete the selection.
+- **Arrow keys** — nudge the selection by one cell; Shift moves five.
+- **Ctrl/⌘ + Z**, **Ctrl/⌘ + Shift + Z** (or Ctrl+Y) — undo/redo.
+- **?** — help and shortcuts; **0** — fit to view; **G** — toggle the grid.
+
+### Drawing modifiers
+
+- Right-dragging a tool performs its erase/arrow action.
+- Ctrl/⌘-click an object to add or remove it from the selection.
+- The line toolbar has independent **start** and **end** arrow styles:
+  none, single line, hollow or solid.
+- Endpoints snap to the character grid.
+
+## Lines
+
+The line object supports three routing modes:
+
+- **Straight** — a direct line between the two snapped endpoints.
+- **Diagonal + horizontal** — a 45° diagonal segment followed by a horizontal
+  or vertical segment to the endpoint.
+- **Elbow** — a two-segment right-angle connector.
+
+The line style (light, heavy, double, rounded, dashed, ASCII) applies to the
+whole object. Corners within one line are drawn cleanly. Separate elements do
+not merge with each other: a later overlapping shape simply prints on top, so
+crossings never turn into `┼`/`╬` glyphs.
+
+Select a line to edit its style, route and start/end arrow styles in the left
+inspector.
+
+## Rectangle features and text
+
+Text is no longer a separate element kind. Every rectangle has three optional
+features in its element-specific card:
+
+- **Text** — a label inside the rectangle.
+- **Fill** — an empty or character fill that covers the rectangle interior.
+- **Border** — the rectangle outline and stroke style.
+
+New rectangles start with **Border** on. Text is enabled with the **Text**
+checkbox, by pressing **Enter**, or by double-clicking an existing label; there
+is no separate text tool. Checking a feature reveals a nested card immediately
+below it; unchecking it hides the subcard without discarding its saved
+settings.
+
+### Text subcard
+
+1. Tick **Text**, or select a rectangle and press **Enter**.
+2. Click the type button in the subcard or double-click an existing label.
+   Editing happens **directly over the rectangle on the canvas** — no floating
+   card or popup covers the board. The canvas label is hidden while the
+   in-place editor is active.
+   - **Enter** applies.
+   - **Shift+Enter** adds a line.
+   - **Esc** cancels.
+   - Clicking outside applies the current text.
+3. Use the subcard for:
+   - **Font** — 15 Unicode typefaces.
+   - **3×3 alignment grid** — horizontal and vertical placement.
+   - **Direction** — horizontal or vertical.
+   - **Wrap direction** — down/up or right/left.
+   - **Padding** — top, right, bottom and left in half-width character cells.
+
+Text that does not fit is clipped. The rectangle keeps its Text/Fill/Border
+feature flags when saved, moved, resized, copied or deleted.
+
+![In-canvas text editing](docs/screenshots/unidraw-canvas-text.png)
+
+### Fill and border subcards
+
+- **Fill** offers **empty fill** (covers the interior with blanks) and
+  **character fill** (a chosen glyph). Turning Fill off is true transparency.
+- **Border** controls the outline stroke. Turning Border off leaves the fill
+  and text intact.
+
+## Elements, selection and transforms
+
+Everything drawn on the frame is an **element**:
+
+| Element | Created by |
+| --- | --- |
+| `rectangle` | Rectangle tool and every rectangle, including text labels |
+| `ellipse` | Ellipse/circle tool |
+| `diamond` | Diamond tool |
+| `line` | Line tool, or right-drag for an arrow |
+| `doodle` | Pencil, solid rectangle, fill, or converting elements |
+| `group` | Merging two or more selected elements |
+
+- Every frame starts with a **global doodle** pinned at the bottom of the stack.
+  It cannot be clicked, moved or re-ordered. Press **Esc** to select it (and
+  **Esc** again to release it); it is drawn with a quiet outline, no handles and
+  no inspector card. Drawing while it is selected adds to the global doodle.
+  Converting to global doodle merges the selected elements into it.
+- New elements are appended to the top of the frame.
+- Doodles cannot be scaled with selection handles. Use the drawing tools to
+  change their contents instead.
+- Drawing-area tools paint into an existing doodle only: the selected doodle,
+  otherwise the non-global doodle under the pointer, otherwise the global
+  doodle. They never create a new doodle element.
+- **Click** an element to select it; **marquee** on empty canvas to select
+  several; **Ctrl/⌘-click** to add or remove.
+- Drag a selected element to move it; drag a corner handle to resize.
+- **Delete** removes selected elements from the row context card. The global
+  doodle is protected.
+- Elements whose visible content is completely erased are removed
+  automatically, except the global doodle.
+- The icon-only **Z-order** area moves the selection one step forward or
+  backward, or brings it to the front/back. The icon-only **Convert** area
+  contains convert-to-doodle and convert-to-global; merge-into-group appears
+  only when multiple elements are selected.
+- Closed shapes (rectangle, ellipse, diamond) have a **Fill** setting:
+  - **No fill** — transparent; elements underneath remain visible.
+  - **Empty fill** — covers the interior with blanks; elements underneath are
+    hidden.
+  - **Character fill** — covers the interior with the chosen glyph.
+  A filled shape always covers what is underneath it; empty fill is different
+  from no fill. Dragging a shape previews the final frame directly; a single
+  click creates `□` (rectangle), `◇` (diamond) or `○` (ellipse). Moving and
+  resizing are constrained to the current board and render in z-order.
+- With the **Pan** tool, **right-drag** selects a rectangle of text with a red
+  marquee. Releasing copies it to the clipboard as a plain fenced code block
+  that can be pasted into another note. **Esc** clears the red text selection.
+- With the **Select** tool, **right-drag** inside the selection scales it. A
+  right-click without dragging still opens the element menu.
+- Drawing-area tools (Pencil, Rectangle fill and Fill) only modify doodles. If
+  a single doodle is selected it is the target; otherwise the non-global doodle
+  under the pointer is focused, falling back to the global doodle. Drawing-area
+  tools never create a new doodle element.
+- **Visibility** and **lock** are stored per element and are toggled from the
+  right element list. Locked elements cannot be selected, moved or edited with
+  the left mouse button; right-click one to unlock it, or right-click empty
+  canvas and choose **Unlock all elements**. The global doodle has no lock
+  control and remains Esc-only.
+- **Right-click** a selection with the Select tool to convert it to a doodle,
+  merge it into the global doodle, group it, delete it, toggle visibility or
+  lock it.
+- A selected rectangle shows a **Features** card with **Text**, **Fill** and
+  **Border** checkboxes. Each checked feature opens its own nested settings
+  card. Text is a rectangle feature; enable it with the Text checkbox or Enter.
+
+## Grid, canvas and view
+
+- Grid size options: **4, 8, 12 and 16 px** character cells.
+- Toggle grid lines from the toolbar; the setting is saved with the plugin.
+- The canvas has no fixed edge in normal use: objects expand it as needed.
+- Minimum canvas width and height are stored per drawing.
+- Erasing content below the minimum/visible bounds automatically contracts the
+  canvas.
+- Zoom range 20–400%; zoom, pan and fit are preserved in the status bar.
+
+## Files and embeds
+
+A `.unidraw` file is a UTF-8 JSON element document (single frame):
+
+```json
+{
+  "format": "unidraw",
+  "version": 1,
+  "minCols": 40,
+  "minRows": 20,
+  "activeLayerId": "frame-1",
+  "layers": [
+    {
+      "id": "frame-1",
+      "name": "Frame",
+      "visible": true,
+      "locked": false,
+      "objects": [
+        {
+          "id": "doodle-global",
+          "kind": "cells",
+          "role": "draw",
+          "global": true,
+          "cells": []
+        },
+        {
+          "id": "line-1",
+          "kind": "line",
+          "x1": 2, "y1": 2, "x2": 20, "y2": 8,
+          "style": "light",
+          "route": "elbow",
+          "arrowStart": "none",
+          "arrowEnd": "solid"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Existing plain-text `.unidraw` files are still imported: the text becomes one
+global doodle element, so older drawings open without migration steps. Text exports
+and code blocks remain plain character art.
+
+Embed a drawing in a note:
+
+```md
+![[my-diagram.unidraw]]
+```
+
+or keep the art directly in a code block:
+
+````md
+```unidraw
+╭──────────────╮
+│  Hello 🌍     │
+╰──────────────╯
+```
+````
+
+File embeds render in Reading view with a copy/open bar and read the latest file
+contents. The code-block form is self-contained and uses the monospace font.
+
+## Export
+
+The **Export** menu offers:
+
+- **Copy as text** — the composed character art.
+- **Copy as Markdown** — a `unidraw` fenced block.
+- **Copy as image** — PNG to the clipboard where supported.
+- **Export PNG** — theme-coloured PNG at 2× resolution.
+- **Export transparent PNG** — transparent background.
+- **Export text file** — `.txt`.
+- **Export Markdown file** — `.md` with a fenced art block.
+- **Insert into active note** — inserts a fenced block at the cursor.
+
+The current release lives in **`dist/unidraw-0.2.8/`**: the three plugin
+files plus `unidraw-0.2.8.zip`. Previous releases are kept compressed in
+**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/`, `unidraw-0.2.2/`, `unidraw-0.2.3/`, `unidraw-0.2.4/`, `unidraw-0.2.5/`, `unidraw-0.2.6/` and `unidraw-0.2.7/`).
+
+## Settings
+
+Open **Settings → Unidraw** for:
+
+- Interface language (automatic, English, Chinese).
+- Grid size (4/8/12/16 px).
+- Canvas font family and line height.
+- Grid style (dots/lines/off).
+- Default stroke, default text style and pencil character.
+- Autosave and delay.
+- Status bar visibility.
+- Embedded drawing font size and line height.
+
+The active drawing grows and shrinks with its visible content; the minimum canvas size is stored in the document.
+
+## Commands
+
+- Unidraw: New drawing
+- Unidraw: New drawing from selection
+- Unidraw: Undo / Redo
+- Unidraw: Copy drawing as text
+- Unidraw: Export drawing as PNG
+- Unidraw: Insert current drawing into note
+- Unidraw: Toggle canvas grid
+- Unidraw: Fit drawing to view
+- Unidraw: Open help & shortcuts
+
+## Architecture
+
+```text
+src/
+  core/       element model, JSON file format, Unicode grid, history, i18n
+  model/      element rasterization, line routes, diamond, group, text layout
+  glyphs/     box-drawing tables, strokes, fills, Unicode typefaces
+  editor/     tool state machine, element selection, transforms, z-order, undo
+  render/     three stacked canvases, previews, theme colours, PNG export
+  ui/         toolbar, style bar, left element inspector, context menus, popovers
+  view/       Obsidian ItemView and reading-mode embeds
+  main.ts     plugin entry, commands, processors, settings tab
+  settings.ts settings schema and settings UI
+```
+
+The editor core has no Obsidian runtime dependency. `demo/` mounts the same UI
+with a small mock host, and the screenshot pipeline in `scripts/` uses headless
+Chrome to generate the documentation images.
+
+### Seamless Unicode rendering
+
+Box-drawing (`U+2500–U+257F`), block (`U+2580–U+259F`) and braille
+(`U+2800–U+28FF`) glyphs are drawn with vector geometry in the editor and PNG
+export, avoiding the seams that monospace fonts leave at cell boundaries.
+Regular text, CJK and emoji use the configured font. Reading-mode embeds use the
+font directly, so they can show tiny seams depending on the installed font.
+
+## Development
+
+```bash
+npm install
+npm run dev          # watch mode, bundles main.js
+npm run build        # type-check, bundle, zip and package dist/
+npm test             # 48 unit tests for the grid, elements, fills and shapes
+npm run demo         # build the browser demo
+npm run screenshot   # capture the documentation screenshots (Chrome required)
+npm run link -- /path/to/vault
+```
+
+`npm run build` produces `dist/unidraw-0.2.8/main.js`,
+`dist/unidraw-0.2.8/manifest.json`, `dist/unidraw-0.2.8/styles.css` and
+`dist/unidraw-0.2.8/unidraw-0.2.8.zip`, while leaving `dist/backup/` untouched.
+
+The screenshot script uses `CHROME_PATH` if set, otherwise the macOS Chrome
+location, and drives Chrome through the DevTools Protocol with a temporary
+profile.
+
+## Credits
+
+Unidraw was inspired by:
+
+- [ASCII Canvas](https://github.com/h4kbas/obsidian-ascii) by **Huseyin Akbas** —
+  a minimal ASCII-only canvas plugin and structural reference.
+- [asciiflow](https://asciiflow.com/) — fast keyboard-friendly box-line drawing
+  and smart intersections.
+- [Monodraw](https://monodraw.helftone.com/) — professional character-art
+  elements, groups, text and export.
+
+Unicode character data is defined by the [Unicode Standard](https://unicode.org/).
+The demo uses [Lucide](https://lucide.dev/) icons; Obsidian provides its own
+icon set at runtime. No fonts are bundled.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

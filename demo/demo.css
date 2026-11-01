@@ -1,0 +1,238 @@
+:root {
+  --demo-chrome-bg: #111113;
+  --demo-chrome-border: #26262a;
+  --demo-chrome-text: #b9b9c0;
+  --demo-chrome-muted: #6f6f78;
+  --demo-chrome-tab: #1e1e21;
+  --demo-chrome-tab-border: #303036;
+  --demo-chrome-accent: #8b5cf6;
+}
+
+body.theme-light {
+  --demo-chrome-bg: #ece9e2;
+  --demo-chrome-border: #d8d3c7;
+  --demo-chrome-text: #4b4740;
+  --demo-chrome-muted: #8f8a7f;
+  --demo-chrome-tab: #fffdf8;
+  --demo-chrome-tab-border: #d8d3c7;
+  --demo-chrome-accent: #7c3aed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--demo-chrome-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body.theme-dark {
+  --background-primary: #1e1e1e;
+  --background-primary-alt: #1a1a1b;
+  --background-secondary: #161617;
+  --background-secondary-alt: #111112;
+  --background-modifier-border: #2e2e33;
+  --background-modifier-border-hover: #3f3f46;
+  --background-modifier-hover: #2a2a2f;
+  --background-modifier-active-hover: #35353c;
+  --text-normal: #dcdddf;
+  --text-muted: #a2a2aa;
+  --text-faint: #6d6d76;
+  --text-error: #f87171;
+  --text-on-accent: #ffffff;
+  --interactive-accent: #8b5cf6;
+  --interactive-accent-hover: #9d74ff;
+  --color-green: #23a55a;
+  --color-orange: #e5a50a;
+  --font-monospace: "Menlo", "SF Mono", "Cascadia Code", "JetBrains Mono", monospace;
+  --font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+}
+
+body.theme-light {
+  --background-primary: #fffdf8;
+  --background-primary-alt: #faf7ef;
+  --background-secondary: #f1eee5;
+  --background-secondary-alt: #e9e5da;
+  --background-modifier-border: #ddd7ca;
+  --background-modifier-border-hover: #c8c1b1;
+  --background-modifier-hover: #e8e3d8;
+  --background-modifier-active-hover: #ddd6c7;
+  --text-normal: #2c2a26;
+  --text-muted: #6b665c;
+  --text-faint: #9b9487;
+  --text-error: #b3261e;
+  --text-on-accent: #ffffff;
+  --interactive-accent: #7c3aed;
+  --interactive-accent-hover: #8b5cf6;
+  --color-green: #1a7f4b;
+  --color-orange: #b26a00;
+  --font-monospace: "Menlo", "SF Mono", "Cascadia Code", "JetBrains Mono", monospace;
+  --font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+}
+
+.demo-window {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--background-primary);
+}
+
+.demo-chrome {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--demo-chrome-border);
+  background: var(--demo-chrome-bg);
+  color: var(--demo-chrome-text);
+  user-select: none;
+}
+
+.demo-traffic {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.demo-light {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: block;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22);
+}
+
+.demo-light.is-red {
+  background: #ff5f57;
+}
+
+.demo-light.is-yellow {
+  background: #febc2e;
+}
+
+.demo-light.is-green {
+  background: #28c840;
+}
+
+.demo-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.demo-brand-mark {
+  font-size: 13px;
+  color: var(--demo-chrome-accent);
+}
+
+.demo-brand-name {
+  color: var(--demo-chrome-text);
+}
+
+.demo-brand-slash {
+  color: var(--demo-chrome-muted);
+  font-weight: 400;
+}
+
+.demo-brand-vault {
+  color: var(--demo-chrome-muted);
+  font-weight: 500;
+}
+
+.demo-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 29px;
+  margin-top: 7px;
+  padding: 0 12px;
+  border: 1px solid var(--demo-chrome-tab-border);
+  border-bottom: none;
+  border-radius: 7px 7px 0 0;
+  background: var(--demo-chrome-tab);
+  color: var(--demo-chrome-text);
+  font-size: 11.5px;
+  font-weight: 550;
+  align-self: flex-end;
+  position: relative;
+  top: 7px;
+}
+
+.demo-tab-icon {
+  color: var(--demo-chrome-accent);
+  font-size: 12px;
+}
+
+.demo-tab-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--demo-chrome-accent);
+  opacity: 0.7;
+}
+
+.demo-chrome-spacer {
+  flex: 1 1 auto;
+}
+
+.demo-badge {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--demo-chrome-border);
+  border-radius: 5px;
+  color: var(--demo-chrome-muted);
+  font-family: var(--font-monospace);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.demo-app {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+/* The view content wrapper Obsidian normally adds. */
+#app > .unidraw-root {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+body.theme-light .unidraw-canvas {
+  filter: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+}
+
+body.demo-still *,
+body.demo-still *::before,
+body.demo-still *::after {
+  animation: none !important;
+  transition: none !important;
+}

@@ -1,0 +1,32 @@
+{
+  "name": "unidraw",
+  "version": "0.2.8",
+  "description": "Draw Unicode character art and diagrams inside Obsidian.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "demo": "node scripts/build-demo.mjs",
+    "screenshot": "node scripts/build-demo.mjs && node scripts/screenshot-demo.mjs",
+    "build": "npm run typecheck && node esbuild.config.mjs production && node build-dist.mjs",
+    "build:dist": "npm run build",
+    "link": "node link-vault.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "unicode",
+    "ascii-art",
+    "diagram",
+    "drawing"
+  ],
+  "author": "Unidraw Contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.2",
+    "lucide-static": "^1.65.0",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.7.2"
+  }
+}
