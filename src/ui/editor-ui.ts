@@ -16,16 +16,14 @@ import type {
   TextAlignH,
   TextAlignV,
   TextDirection,
-  TextTransform,
   TextWrapMode,
   ToolId,
 } from "../core/types";
 import { drawingToMarkdown } from "../core/format";
-import { getShapeFill, type DrawingObject, type Layer, type RectObject, type UnidrawData } from "../core/objects";
+import { getShapeFill, type DrawingObject, type Layer, type RectFillMode, type RectObject, type UnidrawData } from "../core/objects";
 import { codePointLabel, firstGrapheme, widthLabel } from "../core/unicode";
 import { Editor, type EditorStatus, type TextEditRequest } from "../editor/editor";
 import { STROKE_SAMPLES } from "../glyphs/box";
-import { TEXT_TRANSFORM_SAMPLES, TEXT_TRANSFORMS } from "../glyphs/text-styles";
 import {
   canvasToBlob,
   copyImageToClipboard,
@@ -199,6 +197,7 @@ export class UnidrawEditorUI {
   private elementListDraggingId: string | null = null;
   private elementRowMenuEl: HTMLElement | null = null;
   private elementRowMenuCleanup: (() => void) | null = null;
+  private lastBorderStyle: StrokeStyle = "light";
   private toastTimers: number[] = [];
 
   constructor(container: HTMLElement, host: UnidrawUIHost) {
@@ -453,6 +452,11 @@ export class UnidrawEditorUI {
         object.style,
         object.fill ?? (object.filled ? object.fillChar : null),
         object.fillEnabled !== false,
+        object.fillMode ?? "",
+        object.interruptEnabled === true,
+        object.interrupt?.segment ?? 0,
+        object.interrupt?.gap ?? 0,
+        object.interrupt?.offset ?? 0,
         object.text ?? "",
         object.textEnabled !== false,
         object.font ?? "",
@@ -1091,7 +1095,7 @@ export class UnidrawEditorUI {
     this.elementRowMenuEl = null;
   }
 
-  private openElementRowMenu(x: number, y: number): void {
+  private openElementRowMenu(x: number, y: number, globalDoodle = false): void {
     this.closeElementRowMenu();
     this.closePopover();
     const menu = el("div", "unidraw-element-row-card unidraw-element-row-card-floating");
@@ -1108,8 +1112,12 @@ export class UnidrawEditorUI {
         this.updateStatus();
       });
     };
-    action("copy", this.t("inspector.duplicate"), false, () => this.editor.duplicateSelection());
-    action("trash", this.t("element.delete"), true, () => this.editor.deleteSelection());
+    if (globalDoodle) {
+      action("eraser", this.t("element.clearGlobalDoodle"), true, () => this.editor.clearGlobalDoodle());
+    } else {
+      action("copy", this.t("inspector.duplicate"), false, () => this.editor.duplicateSelection());
+      action("trash", this.t("element.delete"), true, () => this.editor.deleteSelection());
+    }
     document.body.appendChild(menu);
     const width = menu.offsetWidth;
     const height = menu.offsetHeight;
@@ -1155,11 +1163,15 @@ export class UnidrawEditorUI {
     if (!row) return;
     const layer = this.editor.getActiveLayer();
     const object = layer?.objects.find((item) => item.id === row.dataset.elementId);
-    if (!object || object.global === true || object.locked === true) return;
+    if (!object || object.locked === true) return;
     event.preventDefault();
     event.stopPropagation();
     if (!pointerDown && this.elementRowMenuEl) return;
     this.closeElementRowMenu();
+    if (object.global === true) {
+      this.openElementRowMenu(event.clientX, event.clientY, true);
+      return;
+    }
     if (!this.editor.getSelectedObjects().some((item) => item.id === object.id)) {
       this.editor.selectElements([object.id], "replace");
       this.elementListAnchorId = object.id;
@@ -1269,41 +1281,184 @@ export class UnidrawEditorUI {
     );
     if (object.borderless !== true) {
       const subcard = el("div", "unidraw-feature-subcard", borderWrapper);
-      this.inspectorStroke(subcard, object.style, (style) => this.editor.setSelectedStyle(style));
+      this.buildBorderStyleControls(subcard, object);
+    }
+
+    const interruptWrapper = feature("feature.interrupt", object.interruptEnabled === true, (enabled) =>
+      this.editor.setSelectedRectInterruptEnabled(enabled),
+    );
+    if (object.interruptEnabled === true) {
+      this.buildRectInterruptControls(el("div", "unidraw-feature-subcard", interruptWrapper), object);
+    }
+  }
+
+  private buildRectInterruptControls(parent: HTMLElement, object: RectObject): void {
+    const config = object.interrupt ?? { segment: 2, gap: 2, offset: 0 };
+    const fields: Array<{
+      key: keyof typeof config;
+      label: MessageKey;
+      min: number;
+      value: number;
+    }> = [
+      { key: "segment", label: "interrupt.segment", min: 1, value: config.segment },
+      { key: "gap", label: "interrupt.gap", min: 1, value: config.gap },
+      { key: "offset", label: "interrupt.offset", min: 0, value: config.offset },
+    ];
+    const grid = el("div", "unidraw-interrupt-grid", parent);
+    for (const field of fields) {
+      const cell = el("label", "unidraw-interrupt-field", grid);
+      el("span", "unidraw-interrupt-label", cell).setText(this.t(field.label));
+      const input = el("input", "unidraw-interrupt-input", cell) as HTMLInputElement;
+      input.type = "number";
+      input.min = String(field.min);
+      input.value = String(field.value);
+      input.addEventListener("change", () => {
+        this.editor.setSelectedRectInterruptValue(field.key, Number(input.value));
+        this.updateStatus();
+      });
+    }
+  }
+
+  private buildBorderStyleControls(parent: HTMLElement, object: RectObject): void {
+    const lightFamily: StrokeStyle[] = ["light", "rounded", "dashed", "dash2", "dash4"];
+    const heavyFamily: StrokeStyle[] = ["heavy", "heavyDash2", "heavyDash3", "heavyDash4"];
+    const isLight = lightFamily.includes(object.style);
+    const isHeavy = heavyFamily.includes(object.style);
+    const field = el("div", "unidraw-border-field", parent);
+    el("div", "unidraw-text-field-label", field).setText(this.t("border.style"));
+    const tabs = el("div", "unidraw-border-tabs", field);
+    const styles: Array<{ style: StrokeStyle; icon: string; label: MessageKey }> = [
+      { style: "light", icon: "minus", label: "border.light" },
+      { style: "heavy", icon: "bold", label: "border.heavy" },
+      { style: "double", icon: "equal", label: "border.double" },
+      { style: "ascii", icon: "terminal", label: "border.ascii" },
+    ];
+    for (const item of styles) {
+      const button = el("button", "unidraw-border-tab", tabs) as HTMLButtonElement;
+      button.type = "button";
+      const active = item.style === "light" ? isLight : item.style === "heavy" ? isHeavy : object.style === item.style;
+      button.toggleClass("is-active", active);
+      button.setAttribute("aria-label", this.t(item.label));
+      this.host.tooltip(button, this.t(item.label));
+      const preview = el("span", `unidraw-border-preview is-${item.style}`, button);
+      setIconSafe(this.host, el("span", "unidraw-border-tab-icon", preview), item.icon);
+      button.addEventListener("click", () => {
+        this.lastBorderStyle = item.style;
+        this.editor.setSelectedStyle(item.style);
+        this.updateStatus();
+      });
+    }
+
+    if (isLight || isHeavy) {
+      const patternField = el("div", "unidraw-border-pattern-field", parent);
+      el("div", "unidraw-text-field-label", patternField).setText(this.t("border.pattern"));
+      const grid = el("div", "unidraw-border-dash-grid", patternField);
+      const options: Array<{ style: StrokeStyle; label: MessageKey; sample: string }> = isLight
+        ? [
+            { style: "light", label: "border.solid", sample: "solid" },
+            { style: "dash2", label: "border.dash2", sample: "dash2" },
+            { style: "dashed", label: "border.dash3", sample: "dash3" },
+            { style: "dash4", label: "border.dash4", sample: "dash4" },
+          ]
+        : [
+            { style: "heavy", label: "border.solid", sample: "solid" },
+            { style: "heavyDash2", label: "border.dash2", sample: "dash2" },
+            { style: "heavyDash3", label: "border.dash3", sample: "dash3" },
+            { style: "heavyDash4", label: "border.dash4", sample: "dash4" },
+          ];
+      for (const option of options) {
+        const button = el("button", "unidraw-border-dash-option", grid) as HTMLButtonElement;
+        button.type = "button";
+        button.toggleClass("is-active", object.style === option.style);
+        button.setAttribute("aria-label", this.t(option.label));
+        this.host.tooltip(button, this.t(option.label));
+        el("span", `unidraw-border-dash-sample is-${option.sample}`, button);
+        button.addEventListener("click", () => {
+          this.lastBorderStyle = option.style;
+          this.editor.setSelectedStyle(option.style);
+          this.updateStatus();
+        });
+      }
+    }
+
+    if (isLight) {
+      const rounded = el("label", "unidraw-border-rounded", parent);
+      const checkbox = el("input", "unidraw-border-rounded-check", rounded) as HTMLInputElement;
+      checkbox.type = "checkbox";
+      checkbox.checked = object.style === "rounded";
+      el("span", "unidraw-border-rounded-label", rounded).setText(this.t("border.rounded"));
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          if (object.style !== "rounded") this.lastBorderStyle = object.style;
+          this.editor.setSelectedStyle("rounded");
+        } else {
+          const fallback = lightFamily.includes(this.lastBorderStyle) && this.lastBorderStyle !== "rounded"
+            ? this.lastBorderStyle
+            : "light";
+          this.editor.setSelectedStyle(fallback);
+        }
+        this.updateStatus();
+      });
     }
   }
 
   private buildRectFillControls(parent: HTMLElement, object: RectObject): void {
+    const blockFills = ["█", "▓", "▒", "░", "▚", "▞", "▙", "▟", "■", "▪", "▮", "▰"];
     const fill = getShapeFill(object) ?? "";
-    const row = el("div", "unidraw-inspector-field", parent);
-    el("span", "unidraw-field-label", row).setText(this.t("inspector.fillMode"));
-    const segmented = el("div", "unidraw-segmented", row);
-    const empty = el("button", "unidraw-segment", segmented) as HTMLButtonElement;
-    empty.type = "button";
-    empty.setText("∅");
-    empty.toggleClass("is-active", fill === "");
-    this.host.tooltip(empty, this.t("fill.emptyFill"));
-    empty.addEventListener("click", () => {
-      this.editor.setSelectedFill("");
-      this.updateStatus();
-    });
-    const custom = el("button", "unidraw-segment", segmented) as HTMLButtonElement;
-    custom.type = "button";
-    custom.setText(fill && fill !== "" ? fill : object.fillChar || "█");
-    custom.toggleClass("is-active", fill !== "");
-    this.host.tooltip(custom, this.t("fill.custom"));
-    custom.addEventListener("click", () => {
-      this.editor.setSelectedFill(fill && fill !== "" ? fill : object.fillChar || "█");
-      this.updateStatus();
-    });
-    const charRow = el("div", "unidraw-inspector-field", parent);
-    el("span", "unidraw-field-label", charRow).setText(this.t("inspector.fillChar"));
-    const swatch = el("button", "unidraw-char-swatch", charRow) as HTMLButtonElement;
-    swatch.type = "button";
-    swatch.setText(fill === "" ? "∅" : fill);
-    swatch.addEventListener("click", () => this.openCharPalette(swatch, "selectedFill"));
-  }
+    const mode = object.fillMode ?? (fill === "" ? "empty" : "custom");
+    const blockChar = blockFills.includes(fill) ? fill : blockFills[0];
+    const customChar = fill && fill !== "" ? fill : object.fillChar || "█";
 
+    const field = el("div", "unidraw-fill-field", parent);
+    el("div", "unidraw-text-field-label", field).setText(this.t("inspector.fillMode"));
+    const tabs = el("div", "unidraw-fill-tabs", field);
+    const tab = (tabMode: RectFillMode, label: MessageKey, iconName: string): void => {
+      const button = el("button", "unidraw-fill-tab", tabs) as HTMLButtonElement;
+      button.type = "button";
+      button.toggleClass("is-active", mode === tabMode);
+      button.setAttribute("aria-label", this.t(label));
+      this.host.tooltip(button, this.t(label));
+      const preview = el("span", `unidraw-fill-tab-preview is-${tabMode}`, button);
+      setIconSafe(this.host, el("span", "unidraw-fill-tab-icon", preview), iconName);
+      button.addEventListener("click", () => {
+        if (tabMode === "empty") this.editor.setSelectedRectFill("empty");
+        else if (tabMode === "block") this.editor.setSelectedRectFill("block", blockChar);
+        else this.editor.setSelectedRectFill("custom", customChar);
+        this.updateStatus();
+      });
+    };
+    tab("empty", "fill.tab.empty", "grid");
+    tab("block", "fill.tab.block", "square");
+    tab("custom", "fill.tab.custom", "pencil");
+
+    if (mode === "block") {
+      const detail = el("div", "unidraw-fill-detail", parent);
+      el("div", "unidraw-text-field-label", detail).setText(this.t("fill.blockGrid"));
+      const grid = el("div", "unidraw-fill-block-grid", detail);
+      for (const ch of blockFills) {
+        const button = el("button", "unidraw-fill-block-btn", grid) as HTMLButtonElement;
+        button.type = "button";
+        button.setText(ch);
+        button.toggleClass("is-active", fill === ch);
+        button.setAttribute("aria-label", `${this.t("fill.tab.block")} ${ch}`);
+        this.host.tooltip(button, ch);
+        button.addEventListener("click", () => {
+          this.editor.setSelectedRectFill("block", ch);
+          this.updateStatus();
+        });
+      }
+    } else if (mode === "custom") {
+      const detail = el("div", "unidraw-fill-detail", parent);
+      el("div", "unidraw-text-field-label", detail).setText(this.t("inspector.fillChar"));
+      const row = el("div", "unidraw-fill-custom-row", detail);
+      const swatch = el("button", "unidraw-fill-custom-swatch", row) as HTMLButtonElement;
+      swatch.type = "button";
+      swatch.setText(customChar);
+      swatch.setAttribute("aria-label", this.t("fill.custom"));
+      this.host.tooltip(swatch, this.t("fill.custom"));
+      swatch.addEventListener("click", () => this.openCharPalette(swatch, "selectedFill"));
+    }
+  }
 
   private buildCircleInspector(object: Extract<DrawingObject, { kind: "circle" | "diamond" }>): void {
     const section = this.inspectorSection(this.t("inspector.shape"));
@@ -1352,49 +1507,21 @@ export class UnidrawEditorUI {
   }
 
   private buildTextControls(parent: HTMLElement, object: RectObject): void {
-    const previewRow = el("div", "unidraw-text-preview-row", parent);
-    const note = el("div", "unidraw-inspector-note unidraw-text-preview", previewRow);
-    note.setText(object.text && object.text.length > 0 ? object.text : this.t("text.placeholder"));
-    note.style.whiteSpace = "pre-wrap";
-    const edit = el("button", "unidraw-inspector-icon-btn unidraw-text-edit-btn", previewRow) as HTMLButtonElement;
-    edit.type = "button";
-    edit.setAttribute("aria-label", this.t("text.dialogEdit"));
-    setIconSafe(this.host, el("span", "unidraw-btn-icon", edit), "type");
-    this.host.tooltip(edit, this.t("text.dialogEdit"));
-    edit.addEventListener("click", () => this.editor.requestEditText(object));
-
-    const fontRow = el("div", "unidraw-inspector-field", parent);
-    el("span", "unidraw-field-label", fontRow).setText(this.t("inspector.font"));
-    const font = el("select", "unidraw-select", fontRow) as HTMLSelectElement;
-    for (const item of TEXT_TRANSFORMS) {
-      const option = el("option", "", font) as HTMLOptionElement;
-      option.value = item;
-      option.textContent = TEXT_TRANSFORM_SAMPLES[item];
-    }
-    font.value = object.font ?? "normal";
-    font.addEventListener("change", () => this.editor.setSelectedTextFont(font.value as TextTransform));
-
     this.inspectorTextGrid(parent, object);
     this.inspectorTextFlow(parent, object);
     this.inspectorTextPadding(parent, object);
   }
 
   private inspectorTextGrid(section: HTMLElement, object: RectObject): void {
-    const row = el("div", "unidraw-inspector-field unidraw-text-grid-field", section);
-    el("span", "unidraw-field-label", row).setText(this.t("inspector.align"));
-    const grid = el("div", "unidraw-text-grid", row);
+    const field = el("div", "unidraw-text-field", section);
+    el("div", "unidraw-text-field-label", field).setText(this.t("inspector.align"));
+    const grid = el("div", "unidraw-text-grid", field);
     const hAligns: TextAlignH[] = ["left", "center", "right"];
     const vAligns: TextAlignV[] = ["top", "middle", "bottom"];
-    const glyphs: Record<string, string> = {
-      "left:top": "↖", "center:top": "↑", "right:top": "↗",
-      "left:middle": "←", "center:middle": "·", "right:middle": "→",
-      "left:bottom": "↙", "center:bottom": "↓", "right:bottom": "↘",
-    };
     for (const vAlign of vAligns) {
       for (const hAlign of hAligns) {
         const button = el("button", "unidraw-text-grid-btn", grid) as HTMLButtonElement;
         button.type = "button";
-        button.setText(glyphs[`${hAlign}:${vAlign}`]);
         button.toggleClass("is-active", (object.hAlign ?? "left") === hAlign && (object.vAlign ?? "top") === vAlign);
         const label = `${this.t(`align.${hAlign}` as MessageKey)} / ${this.t(`align.${vAlign}` as MessageKey)}`;
         button.setAttribute("aria-label", label);
@@ -1408,11 +1535,11 @@ export class UnidrawEditorUI {
   }
 
   private inspectorTextFlow(section: HTMLElement, object: RectObject): void {
-    const dRow = el("div", "unidraw-inspector-field", section);
-    el("span", "unidraw-field-label", dRow).setText(this.t("inspector.direction"));
-    const dSeg = el("div", "unidraw-segmented", dRow);
+    const directionField = el("div", "unidraw-text-field", section);
+    el("div", "unidraw-text-field-label", directionField).setText(this.t("inspector.direction"));
+    const directionOptions = el("div", "unidraw-text-options", directionField);
     for (const direction of ["horizontal", "vertical"] as TextDirection[]) {
-      const button = el("button", "unidraw-segment", dSeg) as HTMLButtonElement;
+      const button = el("button", "unidraw-text-option", directionOptions) as HTMLButtonElement;
       button.type = "button";
       button.setText(direction === "horizontal" ? "↔" : "↕");
       button.toggleClass("is-active", (object.direction ?? "horizontal") === direction);
@@ -1422,42 +1549,49 @@ export class UnidrawEditorUI {
         this.updateStatus();
       });
     }
-    const wRow = el("div", "unidraw-inspector-field", section);
-    el("span", "unidraw-field-label", wRow).setText(this.t("inspector.wrap"));
-    const wrap = el("select", "unidraw-select", wRow) as HTMLSelectElement;
+
+    const wrapField = el("div", "unidraw-text-field", section);
+    el("div", "unidraw-text-field-label", wrapField).setText(this.t("inspector.wrap"));
+    const wrapOptions = el("div", "unidraw-text-options", wrapField);
     const direction = object.direction ?? "horizontal";
-    const wrapOptions = direction === "vertical" ? (["right", "left"] as TextWrapMode[]) : (["down", "up"] as TextWrapMode[]);
-    for (const value of wrapOptions) {
-      const option = el("option", "", wrap) as HTMLOptionElement;
-      option.value = value;
-      option.textContent = this.t(`wrap.${value}` as MessageKey);
+    const wraps = direction === "vertical" ? (["right", "left"] as TextWrapMode[]) : (["down", "up"] as TextWrapMode[]);
+    const glyphs: Record<TextWrapMode, string> = { down: "↓", up: "↑", right: "→", left: "←" };
+    for (const wrap of wraps) {
+      const button = el("button", "unidraw-text-option", wrapOptions) as HTMLButtonElement;
+      button.type = "button";
+      button.setText(glyphs[wrap]);
+      button.toggleClass("is-active", (object.wrap ?? "down") === wrap);
+      this.host.tooltip(button, this.t(`wrap.${wrap}` as MessageKey));
+      button.addEventListener("click", () => {
+        this.editor.setSelectedTextWrap(wrap);
+        this.updateStatus();
+      });
     }
-    wrap.value = wrapOptions.includes(object.wrap ?? "down") ? (object.wrap ?? "down") : wrapOptions[0];
-    wrap.addEventListener("change", () => {
-      this.editor.setSelectedTextWrap(wrap.value as TextWrapMode);
-      this.updateStatus();
-    });
   }
 
   private inspectorTextPadding(section: HTMLElement, object: RectObject): void {
-    const row = el("div", "unidraw-inspector-field unidraw-padding-field", section);
-    el("span", "unidraw-field-label", row).setText(this.t("inspector.padding"));
-    const grid = el("div", "unidraw-padding-grid", row);
+    const field = el("div", "unidraw-text-field", section);
+    el("div", "unidraw-text-field-label", field).setText(this.t("inspector.padding"));
+    const grid = el("div", "unidraw-text-padding", field);
     const padding = object.padding ?? { top: 0, right: 1, bottom: 0, left: 1 };
-    const sides: Array<{ key: "top" | "right" | "bottom" | "left"; label: MessageKey }> = [
-      { key: "top", label: "inspector.paddingTop" },
-      { key: "right", label: "inspector.paddingRight" },
-      { key: "bottom", label: "inspector.paddingBottom" },
-      { key: "left", label: "inspector.paddingLeft" },
+    const sides: Array<{ key: "top" | "right" | "bottom" | "left"; label: MessageKey; icon: string }> = [
+      { key: "top", label: "inspector.paddingTop", icon: "↑" },
+      { key: "right", label: "inspector.paddingRight", icon: "→" },
+      { key: "bottom", label: "inspector.paddingBottom", icon: "↓" },
+      { key: "left", label: "inspector.paddingLeft", icon: "←" },
     ];
     for (const side of sides) {
-      const cell = el("label", "unidraw-padding-cell", grid);
-      el("span", "", cell).setText(this.t(side.label));
-      const input = el("input", "unidraw-min-input", cell) as HTMLInputElement;
+      const cell = el("div", "unidraw-text-padding-cell", grid);
+      const icon = el("span", "unidraw-text-padding-icon", cell);
+      icon.setText(side.icon);
+      icon.setAttribute("aria-hidden", "true");
+      const input = el("input", "unidraw-text-padding-input", cell) as HTMLInputElement;
       input.type = "number";
       input.min = "0";
       input.max = "20";
       input.value = String(padding[side.key]);
+      input.setAttribute("aria-label", this.t(side.label));
+      this.host.tooltip(input, this.t(side.label));
       input.addEventListener("change", () => {
         this.editor.setSelectedTextPadding(side.key, Number(input.value));
         this.updateStatus();
@@ -1586,10 +1720,20 @@ export class UnidrawEditorUI {
     textarea.style.paddingRight = `${Math.round(padding.right * cellW)}px`;
     textarea.style.paddingBottom = `${Math.round(padding.bottom * cellH)}px`;
     textarea.style.paddingLeft = `${Math.round(padding.left * cellW)}px`;
-    textarea.style.fontSize = `${Math.max(9, Math.min(40, cellH * 0.82))}px`;
+    const fontSize = Math.max(8, Math.min(40, cellH * 0.78, cellW * 1.55));
+    textarea.style.fontSize = `${fontSize}px`;
     textarea.style.lineHeight = `${Math.max(11, cellH)}px`;
     textarea.style.textAlign = object.hAlign ?? "left";
     if (object.direction === "vertical") textarea.style.writingMode = "vertical-rl";
+    // Match the canvas cell advance, not just the font size.
+    const measureCanvas = document.createElement("canvas");
+    const measure = measureCanvas.getContext("2d");
+    if (measure) {
+      const style = getComputedStyle(textarea);
+      measure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const advance = measure.measureText("M").width;
+      if (advance > 0) textarea.style.letterSpacing = `${cellW - advance}px`;
+    }
     const apply = (): void => {
       this.editor.confirmTextRequest(textarea.value, request.font);
       this.closeTextModal(true);

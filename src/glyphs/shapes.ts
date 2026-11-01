@@ -316,15 +316,15 @@ export function drawRectangle(
     return rect;
   }
   if (h === 1) {
-    const path: CellPos[] = [];
-    for (let c = rect.c0; c <= rect.c1; c++) path.push({ row: rect.r0, col: c });
-    paintPath(doc, path, options.style, { capEnds: true });
+    paintMask(doc, rect.r0, rect.c0, E, options.style);
+    for (let c = rect.c0 + 1; c <= rect.c1 - 1; c++) paintMask(doc, rect.r0, c, E | W, options.style);
+    paintMask(doc, rect.r0, rect.c1, W, options.style);
     return rect;
   }
   if (w === 1) {
-    const path: CellPos[] = [];
-    for (let r = rect.r0; r <= rect.r1; r++) path.push({ row: r, col: rect.c0 });
-    paintPath(doc, path, options.style, { capEnds: true });
+    paintMask(doc, rect.r0, rect.c0, S, options.style);
+    for (let r = rect.r0 + 1; r <= rect.r1 - 1; r++) paintMask(doc, r, rect.c0, N | S, options.style);
+    paintMask(doc, rect.r1, rect.c0, N, options.style);
     return rect;
   }
 

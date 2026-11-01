@@ -13,7 +13,18 @@ export type ToolId =
   | "circle"
   | "diamond";
 
-export type StrokeStyle = "light" | "heavy" | "double" | "rounded" | "dashed" | "ascii";
+export type StrokeStyle =
+  | "light"
+  | "heavy"
+  | "double"
+  | "rounded"
+  | "dashed"
+  | "dash2"
+  | "dash4"
+  | "heavyDash2"
+  | "heavyDash3"
+  | "heavyDash4"
+  | "ascii";
 
 export type LineRoute = "straight" | "diagonal" | "elbow";
 

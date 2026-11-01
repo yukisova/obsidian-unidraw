@@ -1,6 +1,6 @@
 {
   "name": "unidraw",
-  "version": "0.2.8",
+  "version": "0.2.19",
   "description": "Draw Unicode character art and diagrams inside Obsidian.",
   "main": "main.js",
   "scripts": {

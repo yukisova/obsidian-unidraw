@@ -33,6 +33,21 @@ ROUNDED[S | W] = "╮";
 const DASHED: string[] = LIGHT.slice();
 DASHED[N | S] = "┆";
 DASHED[E | W] = "┄";
+const DASH2: string[] = LIGHT.slice();
+DASH2[N | S] = "╎";
+DASH2[E | W] = "╌";
+const DASH4: string[] = LIGHT.slice();
+DASH4[N | S] = "┊";
+DASH4[E | W] = "┈";
+const HEAVY_DASH2: string[] = HEAVY.slice();
+HEAVY_DASH2[N | S] = "╏";
+HEAVY_DASH2[E | W] = "╍";
+const HEAVY_DASH3: string[] = HEAVY.slice();
+HEAVY_DASH3[N | S] = "┇";
+HEAVY_DASH3[E | W] = "┅";
+const HEAVY_DASH4: string[] = HEAVY.slice();
+HEAVY_DASH4[N | S] = "┋";
+HEAVY_DASH4[E | W] = "┉";
 const ASCII: string[] = [
   " ", "|", "-", "+", "|", "|", "+", "+", "-", "+", "-", "+", "+", "+", "+", "+",
 ];
@@ -43,6 +58,11 @@ const TABLES: Record<StrokeStyle, string[]> = {
   double: DOUBLE,
   rounded: ROUNDED,
   dashed: DASHED,
+  dash2: DASH2,
+  dash4: DASH4,
+  heavyDash2: HEAVY_DASH2,
+  heavyDash3: HEAVY_DASH3,
+  heavyDash4: HEAVY_DASH4,
   ascii: ASCII,
 };
 
@@ -53,6 +73,11 @@ const UNIQUE_MASKS: Record<StrokeStyle, number[]> = {
   double: [3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15],
   rounded: [N | E, E | S, N | W, S | W],
   dashed: [N | S, E | W],
+  dash2: [N | S, E | W],
+  dash4: [N | S, E | W],
+  heavyDash2: [N | S, E | W],
+  heavyDash3: [N | S, E | W],
+  heavyDash4: [N | S, E | W],
   ascii: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
 };
 
@@ -70,8 +95,13 @@ function register(style: StrokeStyle): void {
 // Rounded and dashed first: their corners/lines are the most specific.
 register("double");
 register("heavy");
+register("heavyDash2");
+register("heavyDash3");
+register("heavyDash4");
 register("rounded");
 register("dashed");
+register("dash2");
+register("dash4");
 register("ascii");
 register("light");
 
@@ -104,6 +134,9 @@ export function isLineGlyph(ch: string): boolean {
 export function styleWeight(style: StrokeStyle): number {
   switch (style) {
     case "heavy":
+    case "heavyDash2":
+    case "heavyDash3":
+    case "heavyDash4":
       return 6;
     case "double":
       return 5;
@@ -112,6 +145,8 @@ export function styleWeight(style: StrokeStyle): number {
     case "rounded":
       return 3;
     case "dashed":
+    case "dash2":
+    case "dash4":
       return 2;
     case "ascii":
       return 1;

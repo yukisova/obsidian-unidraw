@@ -3040,28 +3040,41 @@
   height: 15px;
 }
 
-.unidraw-text-grid-field {
-  align-items: flex-start;
+.unidraw-text-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+}
+
+.unidraw-text-field-label {
+  align-self: flex-start;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
 }
 
 .unidraw-text-grid {
   display: grid;
-  grid-template-columns: repeat(3, 29px);
-  gap: 3px;
+  grid-template-columns: repeat(3, 25px);
+  gap: 4px;
+  margin: 0 auto;
 }
 
 .unidraw-text-grid-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 29px;
-  height: 25px;
+  width: 25px;
+  height: 21px;
   padding: 0;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 5px;
+  border-radius: 4px;
   background: var(--background-secondary);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1;
   cursor: pointer;
 }
@@ -3073,8 +3086,80 @@
 
 .unidraw-text-grid-btn.is-active {
   border-color: var(--interactive-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  background: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+.unidraw-text-options {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  gap: 5px;
+}
+
+.unidraw-text-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.unidraw-text-option:hover {
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
+}
+
+.unidraw-text-option.is-active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+  color: var(--text-normal);
+}
+
+.unidraw-text-padding {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  gap: 5px;
+}
+
+.unidraw-text-padding-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.unidraw-text-padding-icon {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+}
+
+input.unidraw-text-padding-input {
+  width: 34px;
+  height: 24px;
+  margin: 0;
+  padding: 0 3px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  text-align: center;
+}
+
+input.unidraw-text-padding-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
 }
 
 .unidraw-element-row-card-floating {
@@ -3129,25 +3214,6 @@
   background: color-mix(in srgb, var(--background-secondary) 72%, var(--background-primary));
 }
 
-.unidraw-text-preview-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-}
-
-.unidraw-text-preview {
-  flex: 1 1 auto;
-  max-height: 96px;
-  overflow-y: auto;
-  margin: 0;
-}
-
-.unidraw-text-edit-btn {
-  flex: 0 0 27px;
-  width: 27px;
-  height: 27px;
-}
-
 /* In-canvas text editing ---------------------------------------------- */
 
 textarea.unidraw-canvas-text-editor {
@@ -3169,6 +3235,7 @@ textarea.unidraw-canvas-text-editor {
   letter-spacing: 0;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  word-break: break-all;
   box-sizing: border-box;
 }
 
@@ -3182,4 +3249,406 @@ textarea.unidraw-canvas-text-editor:focus {
 textarea.unidraw-canvas-text-editor::placeholder {
   color: var(--text-faint);
   opacity: 0.6;
+}
+
+/* Fill mode tabs ------------------------------------------------------ */
+
+.unidraw-fill-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.unidraw-fill-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  width: 100%;
+}
+
+.unidraw-fill-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.unidraw-fill-tab:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.unidraw-fill-tab.is-active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--text-normal);
+}
+
+.unidraw-fill-tab-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  line-height: 1;
+  overflow: hidden;
+}
+
+.unidraw-fill-tab-preview.is-empty {
+  background-image: radial-gradient(var(--text-faint) 0.8px, transparent 0.8px);
+  background-size: 5px 5px;
+}
+
+.unidraw-fill-tab-preview.is-block {
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--text-muted) 22%, transparent) 25%, transparent 25%, transparent 50%, color-mix(in srgb, var(--text-muted) 22%, transparent) 50%, color-mix(in srgb, var(--text-muted) 22%, transparent) 75%, transparent 75%);
+  background-size: 8px 8px;
+}
+
+.unidraw-fill-tab-preview.is-custom {
+  background-image: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--text-faint) 18%, transparent) 5px 6px);
+}
+
+.unidraw-fill-tab-icon,
+.unidraw-fill-tab-icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.unidraw-fill-tab.is-active .unidraw-fill-tab-icon {
+  color: var(--text-normal);
+}
+
+.unidraw-fill-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding-top: 3px;
+}
+
+.unidraw-fill-block-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 27px);
+  gap: 4px;
+  justify-content: center;
+}
+
+.unidraw-fill-block-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 23px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.unidraw-fill-block-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.unidraw-fill-block-btn.is-active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+.unidraw-fill-custom-row {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.unidraw-fill-custom-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.unidraw-fill-custom-swatch:hover {
+  border-color: var(--interactive-accent);
+}
+
+
+/* Border style tabs --------------------------------------------------- */
+
+.unidraw-border-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.unidraw-border-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+}
+
+.unidraw-border-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.unidraw-border-tab:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.unidraw-border-tab.is-active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--text-normal);
+}
+
+.unidraw-border-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 32px;
+  padding: 2px 3px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: currentColor;
+  overflow: hidden;
+}
+
+.unidraw-border-tab-icon,
+.unidraw-border-tab-icon svg {
+  display: block;
+  width: 13px;
+  height: 13px;
+}
+
+.unidraw-border-preview::after {
+  content: "";
+  display: block;
+  width: 82%;
+  border-top: 1px solid currentColor;
+}
+
+.unidraw-border-preview.is-heavy::after {
+  border-top-width: 3px;
+}
+
+.unidraw-border-preview.is-double::after {
+  border-top: 3px double currentColor;
+}
+
+.unidraw-border-preview.is-ascii::after {
+  border-top: 1px dashed currentColor;
+}
+
+.unidraw-border-dashed {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  width: 100%;
+  padding: 7px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.unidraw-border-dashed.is-active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  color: var(--text-normal);
+}
+
+.unidraw-border-dashed-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.unidraw-border-dashed-icon,
+.unidraw-border-dashed-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.unidraw-border-dashed-label {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.unidraw-border-dash-cells {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+}
+
+.unidraw-border-dash-cell {
+  height: 8px;
+  border-top: 1px dashed currentColor;
+}
+
+.unidraw-border-rounded {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  color: var(--text-normal);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.unidraw-border-rounded-check {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--interactive-accent);
+  cursor: pointer;
+}
+
+/* Border pattern presets --------------------------------------------- */
+
+.unidraw-border-pattern-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.unidraw-border-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+}
+
+.unidraw-border-dash-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  min-height: 28px;
+  padding: 6px 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.unidraw-border-dash-option:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.unidraw-border-dash-option.is-active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+  color: var(--text-normal);
+}
+
+.unidraw-border-dash-sample {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: currentColor;
+}
+
+.unidraw-border-dash-sample.is-dash2 {
+  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px);
+}
+
+.unidraw-border-dash-sample.is-dash3 {
+  background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px);
+}
+
+.unidraw-border-dash-sample.is-dash4 {
+  background: repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 4px);
+}
+
+/* Interrupted border -------------------------------------------------- */
+
+.unidraw-interrupt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.unidraw-interrupt-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.unidraw-interrupt-label {
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+input.unidraw-interrupt-input {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0 3px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  text-align: center;
+}
+
+input.unidraw-interrupt-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
 }

@@ -31,6 +31,8 @@ import {
   type CellTuple,
   type Layer,
   type LineObject,
+  type RectFillMode,
+  type RectInterrupt,
   type RectObject,
   type UnidrawData,
   ensureGlobalDoodle,
@@ -151,7 +153,6 @@ type Gesture =
       changed: boolean;
     }
   | { type: "textSelect"; start: CellPos; current: CellPos; moved: boolean }
-  | { type: "rightClick"; start: CellPos; moved: boolean }
   | {
       type: "move";
       before: string;
@@ -263,6 +264,7 @@ export class Editor {
   private pendingText: TextEditRequest | null = null;
   private pendingBefore: string | null = null;
   private textEditingId: string | null = null;
+  private pendingCreatedObjectId: string | null = null;
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private clipboard: DrawingObject[] = [];
@@ -1016,6 +1018,17 @@ export class Editor {
     this.hooks.requestSave();
   }
 
+  clearGlobalDoodle(): void {
+    const layer = getActiveLayer(this.data);
+    const global = layer?.objects.find((object) => object.kind === "cells" && object.role === "draw" && object.global === true);
+    if (!global || global.kind !== "cells" || global.cells.length === 0) return;
+    const before = this.snapshot();
+    global.cells = [];
+    this.pushHistory(before);
+    this.refresh();
+    this.hooks.requestSave();
+  }
+
   setElementVisible(id: string, visible: boolean): void {
     const found = findObject(this.data, id);
     if (!found) return;
@@ -1252,6 +1265,39 @@ export class Editor {
     this.hooks.requestSave();
   }
 
+  duplicateSelectionAtCursor(): void {
+    const entries = this.selectedObjects().filter((entry) => entry.object.global !== true);
+    if (entries.length === 0) {
+      this.hooks.notify("notice.nothingSelected");
+      return;
+    }
+    const bounds = boundsOfObjects(entries.map((entry) => entry.object));
+    const cursor = this.hover;
+    if (!bounds || !cursor) {
+      this.hooks.notify("notice.placeCursor");
+      return;
+    }
+    const layer = this.requireWritableLayer();
+    if (!layer) return;
+    const dx = cursor.col - bounds.x;
+    const dy = cursor.row - bounds.y;
+    const before = this.snapshot();
+    const copies: string[] = [];
+    for (const entry of entries) {
+      const copy = cloneObject(entry.object);
+      copy.id = createId(entry.object.kind);
+      translateObject(copy, dy, dx);
+      layer.objects.push(copy);
+      copies.push(copy.id);
+    }
+    this.selection = new Set(copies);
+    this.data.activeLayerId = layer.id;
+    this.selectedLayers = new Set([layer.id]);
+    this.pushHistory(before);
+    this.refresh();
+    this.hooks.requestSave();
+  }
+
   nudgeSelection(dr: number, dc: number): void {
     if (this.selectionHasGlobal()) return;
     const selected = this.selectedObjects();
@@ -1378,6 +1424,7 @@ export class Editor {
       if (object.kind === "rect") {
         object.fillEnabled = fill !== null;
         object.filled = fill !== null;
+        if (fill !== null) object.fillMode = fill === "" ? "empty" : "custom";
         if (fill && fill !== "") object.fillChar = fill;
       }
       return true;
@@ -1386,7 +1433,40 @@ export class Editor {
 
   setSelectedFillChar(char: string): void {
     const ch = firstGrapheme(char) || "█";
-    this.setSelectedFill(ch === " " ? "" : ch);
+    const fill = ch === " " ? "" : ch;
+    this.updateSelectedObjects((object) => {
+      if (object.kind === "rect") {
+        object.fill = fill;
+        object.fillEnabled = true;
+        object.filled = fill !== "";
+        object.fillMode = fill === "" ? "empty" : "custom";
+        if (fill !== "") object.fillChar = fill;
+        return true;
+      }
+      if (object.kind === "circle" || object.kind === "diamond") {
+        object.fill = fill;
+        return true;
+      }
+      return false;
+    });
+  }
+
+  setSelectedRectFill(mode: RectFillMode, char?: string): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "rect") return false;
+      object.fillEnabled = true;
+      let fill = "";
+      if (mode !== "empty") {
+        const source = char ?? (object.fill && object.fill !== "" ? object.fill : object.fillChar) ?? "█";
+        const grapheme = firstGrapheme(source) || "█";
+        fill = grapheme === " " ? "" : grapheme;
+      }
+      object.fill = fill;
+      object.filled = true;
+      object.fillMode = mode;
+      if (fill !== "") object.fillChar = fill;
+      return true;
+    });
   }
 
   setSelectedFilled(filled: boolean): void {
@@ -1429,6 +1509,29 @@ export class Editor {
         if (object.fill === null || object.fill === undefined) object.fill = "";
         object.filled = true;
       }
+      return true;
+    });
+  }
+
+  setSelectedRectInterruptEnabled(enabled: boolean): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "rect") return false;
+      object.interruptEnabled = enabled;
+      if (enabled) {
+        if (!object.interrupt) object.interrupt = { segment: 2, gap: 2, offset: 0 };
+        object.borderless = false;
+      }
+      return true;
+    });
+  }
+
+  setSelectedRectInterruptValue(key: keyof RectInterrupt, value: number): void {
+    this.updateSelectedObjects((object) => {
+      if (object.kind !== "rect") return false;
+      if (!object.interrupt) object.interrupt = { segment: 2, gap: 2, offset: 0 };
+      if (key === "offset") object.interrupt.offset = clamp(Math.round(value), 0, 9999);
+      else object.interrupt[key] = clamp(Math.round(value), 1, 999);
+      object.interruptEnabled = true;
       return true;
     });
   }
@@ -1630,9 +1733,14 @@ export class Editor {
 
   // -------------------------------------------------------------------- text
 
-  private requestText(request: TextEditRequest): void {
+  private requestText(
+    request: TextEditRequest,
+    beforeOverride?: string,
+    createdObjectId?: string,
+  ): void {
     this.pendingText = request;
-    this.pendingBefore = this.snapshot();
+    this.pendingBefore = beforeOverride ?? this.snapshot();
+    this.pendingCreatedObjectId = createdObjectId ?? null;
     this.textEditingId = request.objectId;
     this.refreshTextEditingCanvas();
     this.hooks.requestText(request);
@@ -1643,10 +1751,10 @@ export class Editor {
     const rows = this.composed.rows;
     const doc = new DrawingDocument(cols, rows);
     const options: RenderElementOptions = { skipTextId: this.textEditingId ?? undefined };
-    for (const layer of this.data.layers) {
-      if (!layer.visible) continue;
-      for (const object of layer.objects) renderElement(doc, object, options);
-    }
+    // Isolate the edited rectangle: elements underneath must not show through
+    // the editing text, while its own fill/border remain visible.
+    const target = this.textEditingId ? findObject(this.data, this.textEditingId) : null;
+    if (target && isElementVisible(target.object)) renderElement(doc, target.object, options);
     this.renderer.setState({ doc, previewBox: null });
   }
 
@@ -1670,6 +1778,7 @@ export class Editor {
     this.selection = new Set([found.object.id]);
     this.pendingText = null;
     this.pendingBefore = null;
+    this.pendingCreatedObjectId = null;
     this.textEditingId = null;
     this.renderer.setState({ previewBox: null });
     this.pushHistory(before);
@@ -1678,11 +1787,19 @@ export class Editor {
   }
 
   cancelTextRequest(): void {
+    const createdId = this.pendingCreatedObjectId;
     this.pendingText = null;
     this.pendingBefore = null;
+    this.pendingCreatedObjectId = null;
     this.textEditingId = null;
     this.paintDoodle = null;
     this.renderer.setState({ previewBox: null });
+    if (createdId) {
+      removeObjectById(this.data, createdId);
+      this.selection.delete(createdId);
+      this.refresh(false);
+      return;
+    }
     this.refresh(false);
   }
 
@@ -1708,7 +1825,6 @@ export class Editor {
             return;
           }
         }
-        this.beginRightClick(e, cell);
         return;
       }
       if (this.tool === "hand") {
@@ -2025,20 +2141,6 @@ export class Editor {
     }).name;
   }
 
-  private beginRightClick(e: PointerEvent, cell: CellPos): void {
-    this.gesture = { type: "rightClick", start: cell, moved: false };
-    this.capturePointer(e);
-  }
-
-  private finishRightClick(e: PointerEvent): void {
-    const gesture = this.gesture;
-    this.gesture = null;
-    this.releaseCapture(e);
-    if (gesture?.type === "rightClick" && !gesture.moved) {
-      this.hooks.requestElementContextMenu?.(e.clientX, e.clientY);
-    }
-  }
-
   private beginTextSelection(e: PointerEvent): void {
     const cell = this.cellAt(e, true);
     if (!cell) return;
@@ -2263,11 +2365,6 @@ export class Editor {
       return;
     }
     if (!cell) return;
-    if (gesture.type === "rightClick") {
-      const start = gesture.start;
-      if (cell.row !== start.row || cell.col !== start.col) gesture.moved = true;
-      return;
-    }
     if (gesture.type === "textSelect") {
       const doc = this.composed.doc;
       const current = {
@@ -2324,10 +2421,6 @@ export class Editor {
       this.releaseCapture(e);
       return;
     }
-    if (gesture.type === "rightClick") {
-      this.finishRightClick(e);
-      return;
-    }
     if (gesture.type === "textSelect") {
       this.finishTextSelection(e);
       return;
@@ -2381,9 +2474,7 @@ export class Editor {
     this.gesture = null;
     this.renderer.setState({ panning: false, marquee: null, previewBox: null });
     if (!gesture) return;
-    if (gesture.type === "rightClick") {
-      // Nothing to restore.
-    } else if (gesture.type === "textSelect") {
+    if (gesture.type === "textSelect") {
       this.textSelection = null;
       this.renderer.setState({ textSelection: null });
     } else if (gesture.type === "pencil") {
@@ -2509,7 +2600,6 @@ export class Editor {
     this.gesture = null;
     this.releaseCapture(e);
     if (gesture.right && !gesture.moved) {
-      this.hooks.requestElementContextMenu?.(e.clientX, e.clientY);
       this.refresh(false);
       return;
     }
@@ -2604,46 +2694,11 @@ export class Editor {
     };
   }
 
-  private composeAtBoardSize(): DrawingDocument {
-    const doc = new DrawingDocument(this.composed.cols, this.composed.rows);
-    for (const layer of this.data.layers) {
-      if (!layer.visible) continue;
-      for (const object of layer.objects) renderElement(doc, object);
-    }
-    return doc;
-  }
-
-  private refreshDuringTransform(): void {
-    const doc = this.composeAtBoardSize();
-    this.renderer.setPreviewDoc(null);
-    const boxes = this.selectedObjects()
-      .map((entry) => objectBounds(entry.object))
-      .filter((bounds): bounds is { x: number; y: number; w: number; h: number } => !!bounds)
-      .map((bounds) => boundsToBox(bounds));
-    const union = this.selectedBounds();
-    this.renderer.setState({
-      doc,
-      objectBoxes: boxes,
-      selection: union ? boundsToBox(union) : null,
-      softSelection: this.isGlobalSelection(),
-      showHandles: this.selectionCanResize(),
-      previewErase: null,
-      tool: this.tool,
-    });
-    this.hooks.statusChanged();
-  }
-
   private updateMove(gesture: Extract<Gesture, { type: "move" }>, cell: CellPos): void {
-    const cols = this.composed.cols;
-    const rows = this.composed.rows;
     const rawDx = cell.col - gesture.start.col;
     const rawDy = cell.row - gesture.start.row;
-    const minDx = -gesture.bounds.x;
-    const maxDx = cols - (gesture.bounds.x + gesture.bounds.w);
-    const minDy = -gesture.bounds.y;
-    const maxDy = rows - (gesture.bounds.y + gesture.bounds.h);
-    const dx = Math.max(minDx, Math.min(maxDx, rawDx));
-    const dy = Math.max(minDy, Math.min(maxDy, rawDy));
+    const dx = Math.max(-gesture.bounds.x, rawDx);
+    const dy = Math.max(-gesture.bounds.y, rawDy);
     if (dx === 0 && dy === 0 && !gesture.moved) {
       this.renderer.scheduleRender();
       return;
@@ -2658,7 +2713,7 @@ export class Editor {
       if (index >= 0) layer.objects[index] = found.object;
       translateObject(found.object, dy, dx);
     }
-    this.refreshDuringTransform();
+    this.refresh(false);
   }
 
   private updateResize(gesture: Extract<Gesture, { type: "resize" }>, cell: CellPos): void {
@@ -2715,12 +2770,10 @@ export class Editor {
       w = nextW;
       h = nextH;
     }
-    const boardCols = this.composed.cols;
-    const boardRows = this.composed.rows;
-    x = Math.max(0, Math.min(x, boardCols - 1));
-    y = Math.max(0, Math.min(y, boardRows - 1));
-    w = Math.max(1, Math.min(w, boardCols - x));
-    h = Math.max(1, Math.min(h, boardRows - y));
+    x = Math.max(0, x);
+    y = Math.max(0, y);
+    w = Math.max(1, w);
+    h = Math.max(1, h);
     gesture.changed = true;
     const newBounds = { x, y, w, h };
     for (const original of gesture.originals) {
@@ -2748,7 +2801,7 @@ export class Editor {
       }
       layer.objects[index] = found.object;
     }
-    this.refreshDuringTransform();
+    this.refresh(false);
   }
 
   // ------------------------------------------------------------------ hit test
@@ -2906,7 +2959,10 @@ export class Editor {
     const cell = this.cellAt(e, true);
     if (!cell) return;
     const hit = this.hitTest(cell);
-    if (!hit) return;
+    if (!hit) {
+      this.createQuickTextBox(cell);
+      return;
+    }
     const object = hit.object;
     if (object.kind === "rect" && typeof object.text === "string") {
       this.selection = new Set([object.id]);
@@ -2915,6 +2971,49 @@ export class Editor {
       this.refreshOverlay(false);
       this.requestEditText(object);
     }
+  }
+
+  private createQuickTextBox(cell: CellPos): void {
+    const layer = this.requireWritableLayer();
+    if (!layer) return;
+    const before = this.snapshot();
+    const object: RectObject = {
+      id: createObjectId(),
+      kind: "rect",
+      x: cell.col,
+      y: cell.row,
+      w: 20,
+      h: 5,
+      filled: false,
+      fillChar: " ",
+      fill: null,
+      fillEnabled: false,
+      style: "light",
+      borderless: true,
+      textEnabled: true,
+      text: "",
+      font: this.textFont,
+      hAlign: "left",
+      vAlign: "top",
+      direction: "horizontal",
+      wrap: "down",
+      padding: createPadding({ top: 0, right: 1, bottom: 0, left: 1 }),
+    };
+    layer.objects.push(object);
+    this.data.activeLayerId = layer.id;
+    this.selectedLayers = new Set([layer.id]);
+    this.selection = new Set([object.id]);
+    this.refresh();
+    this.requestText(
+      {
+        objectId: object.id,
+        box: boxFromBounds(object.x, object.y, object.w, object.h),
+        text: object.text ?? "",
+        font: object.font ?? "normal",
+      },
+      before,
+      object.id,
+    );
   }
 
   // ----------------------------------------------------------------- helpers
@@ -3092,6 +3191,11 @@ export class Editor {
     }
     const mod = modKey(e);
     const key = e.key.toLowerCase();
+    if (mod && key === "d") {
+      e.preventDefault();
+      this.duplicateSelectionAtCursor();
+      return;
+    }
     if (mod && key === "z") {
       e.preventDefault();
       if (e.shiftKey) this.redo();

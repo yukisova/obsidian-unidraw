@@ -27,8 +27,8 @@ Obsidian view with JSON `.unidraw` element files.
 | **Global doodle & groups** | Every frame starts with a global doodle pinned below all elements. It is never hit by clicks; press **Esc** to select it and draw into it. It has no handles or inspector card. Convert selected elements into a doodle, merge them into the global doodle, or group them. |
 | **Unicode accuracy** | One grapheme per cell; CJK, emoji, combining marks and wide characters occupy the correct columns. |
 | **Smart character lines** | Grid-snapped endpoints, three routing modes, start/end arrow styles, and clean corners inside each line. Separate elements stack in z-order instead of merging into `┼`/`╬` crossings. |
-| **Rectangle features** | Rectangles expose optional **Text**, **Fill** and **Border** checkboxes. Each enabled feature reveals its own nested card: text layout, fill mode/swatch, or stroke. |
-| **Right-click element menu** | Convert to a doodle, merge into the global doodle, group, delete, show/hide and lock selected elements. Right-click empty canvas to show all hidden or unlock all elements. |
+| **Rectangle features** | Rectangles expose optional **Text**, **Fill**, **Border** and **Interrupt** checkboxes. Each enabled feature reveals its own nested card: text layout, fill mode/swatch, stroke, or an interrupted border pattern. |
+| **Element list actions** | Icon buttons toggle visibility and locking; right-click a row for duplicate/delete. Global doodle rows can clear their contents. |
 | **Obsidian-native** | JSON `.unidraw` element files, `![[drawing.unidraw]]` embeds, `unidraw` code blocks, commands, ribbon action, autosave, theme-aware UI and settings. |
 | **No runtime dependencies** | The plugin has no network calls and ships no fonts or external runtime libraries. |
 
@@ -50,7 +50,7 @@ Obsidian view with JSON `.unidraw` element files.
 
 ### From the release package
 
-Build or download `dist/unidraw-0.2.8/unidraw-0.2.8.zip`. Unzip it so that
+Build or download `dist/unidraw-0.2.19/unidraw-0.2.19.zip`. Unzip it so that
 `main.js`, `manifest.json` and `styles.css` live inside:
 
 ```text
@@ -105,7 +105,7 @@ current build.
 
 | Tool | Shortcut | Left drag / click | Right drag / click |
 | --- | --- | --- | --- |
-| Select | `V` | Marquee empty canvas; click an element to select; drag to move | Drag to scale the selection; a right-click without dragging opens the element menu |
+| Select | `V` | Marquee empty canvas; click an element to select; drag to move; double-click empty grid to create a text box | Drag to scale the selection |
 | Pan | `H` | Drag to pan | Drag a red box to select text; releasing copies a fenced code block |
 | Pencil | `B` | Draw the current character | Erase cells |
 | Line | `L` | Draw a line | Draw an arrow |
@@ -123,6 +123,8 @@ current build.
 - Hold **Space** to temporarily switch to the Pan tool; **middle-button drag** also pans. Release Space to return to the previous tool.
 - **Ctrl/⌘ + A** — select every element in the frame.
 - **Ctrl/⌘ + C / X / V** — copy, cut and paste objects.
+- **Ctrl/⌘ + D** — duplicate the selected element(s) at the grid cell under the
+  pointer, preserving their relative layout.
 - **Delete / Backspace** — delete the selection.
 - **Arrow keys** — nudge the selection by one cell; Shift moves five.
 - **Ctrl/⌘ + Z**, **Ctrl/⌘ + Shift + Z** (or Ctrl+Y) — undo/redo.
@@ -174,29 +176,82 @@ settings.
 2. Click the type button in the subcard or double-click an existing label.
    Editing happens **directly over the rectangle on the canvas** — no floating
    card or popup covers the board. The canvas label is hidden while the
-   in-place editor is active.
+   in-place editor is active. The editor isolates the rectangle, hiding other
+   elements underneath, and matches the character-cell letter spacing, line
+   height and padding of the final rendering.
    - **Enter** applies.
    - **Shift+Enter** adds a line.
    - **Esc** cancels.
    - Clicking outside applies the current text.
-3. Use the subcard for:
-   - **Font** — 15 Unicode typefaces.
-   - **3×3 alignment grid** — horizontal and vertical placement.
-   - **Direction** — horizontal or vertical.
+3. The subcard is arranged as vertical fields:
+   - **Alignment** — a 3×3 grid for horizontal and vertical placement.
+   - **Text direction** — horizontal or vertical.
    - **Wrap direction** — down/up or right/left.
-   - **Padding** — top, right, bottom and left in half-width character cells.
+   - **Padding** — four compact inputs marked with ↑/→/↓/← icons for top,
+     right, bottom and left, measured in half-width character cells.
 
-Text that does not fit is clipped. The rectangle keeps its Text/Fill/Border
-feature flags when saved, moved, resized, copied or deleted.
+All buttons and inputs in the subcard are horizontally centered; only the
+field labels stay left-aligned.
+
+Font editing is no longer exposed in the subcard; existing font data remains
+readable and preserved.
+
+### Quick text boxes
+
+With the **Select** tool, double-click an empty grid cell. Unidraw creates a
+**20×5 rectangle** at that position with:
+
+- Text on
+- Border off
+- Fill off
+
+In-canvas editing starts immediately. **Esc** removes the temporary empty text
+box; **Enter** or clicking outside keeps it. A confirmed box participates in
+undo/redo.
+
+### Interrupt
+
+The **Interrupt** feature turns the rectangle border into a repeating pattern
+along the perimeter (clockwise, starting at the top-left). It has three integer
+fields:
+
+- **Segment** — length of each drawn segment, minimum 1.
+- **Gap** — length of each skipped segment, minimum 1.
+- **Offset** — shifts the pattern, minimum 0.
+
+Enabling Interrupt also turns on the Border feature. The current line style,
+fill and text are preserved. The pattern is saved with the element.
+
+![Interrupted border](docs/screenshots/unidraw-interrupt.png)
+
+Text that does not fit is clipped. The rectangle keeps its Text/Fill/Border/
+Interrupt feature flags when saved, moved, resized, copied or deleted.
 
 ![In-canvas text editing](docs/screenshots/unidraw-canvas-text.png)
 
 ### Fill and border subcards
 
-- **Fill** offers **empty fill** (covers the interior with blanks) and
-  **character fill** (a chosen glyph). Turning Fill off is true transparency.
-- **Border** controls the outline stroke. Turning Border off leaves the fill
-  and text intact.
+- **Fill** uses three icon-only tabs (tooltips name each mode) with preview
+  swatches:
+  - **Empty** — covers the interior with blanks.
+  - **Block** — opens a grid of shaded/block glyphs.
+  - **Custom** — opens the fill-character picker for any glyph.
+  Turning Fill off is true transparency.
+
+![Fill mode tabs](docs/screenshots/unidraw-fill-tabs.png)
+
+![Border style tabs](docs/screenshots/unidraw-border-tabs.png)
+- **Border** uses a tabbed line-style card:
+  - Four icon-only tabs: **Straight / Bold / Double / ASCII**, each with a
+    tooltip and a CSS line preview.
+  - **Straight** and **Bold** reveal four pattern presets:
+    **Solid / Dash 2 / Dash 3 / Dash 4**. Each has a CSS line preview and a
+    corresponding Unicode stroke family.
+  - **Rounded** is available only for **Straight** and restores the previous
+    light style when unchecked.
+  - **Double** and **ASCII** hide the pattern/rounded extras, so the detail
+    area changes with the selected tab.
+  Turning Border off leaves the fill and text intact.
 
 ## Elements, selection and transforms
 
@@ -211,6 +266,8 @@ Everything drawn on the frame is an **element**:
 | `doodle` | Pencil, solid rectangle, fill, or converting elements |
 | `group` | Merging two or more selected elements |
 
+- Right-click the **global doodle** row in the element list to **clear its
+  contents**; the doodle itself stays in place and the action is undoable.
 - Every frame starts with a **global doodle** pinned at the bottom of the stack.
   It cannot be clicked, moved or re-ordered. Press **Esc** to select it (and
   **Esc** again to release it); it is drawn with a quiet outline, no handles and
@@ -241,27 +298,28 @@ Everything drawn on the frame is an **element**:
   A filled shape always covers what is underneath it; empty fill is different
   from no fill. Dragging a shape previews the final frame directly; a single
   click creates `□` (rectangle), `◇` (diamond) or `○` (ellipse). Moving and
-  resizing are constrained to the current board and render in z-order.
+  resizing are not limited to the current auto-fit board; the canvas grows
+  live while extending or moving past its edge, and transforms still render in
+  z-order.
 - With the **Pan** tool, **right-drag** selects a rectangle of text with a red
   marquee. Releasing copies it to the clipboard as a plain fenced code block
   that can be pasted into another note. **Esc** clears the red text selection.
-- With the **Select** tool, **right-drag** inside the selection scales it. A
-  right-click without dragging still opens the element menu.
+- With the **Select** tool, **right-drag** inside the selection scales it.
 - Drawing-area tools (Pencil, Rectangle fill and Fill) only modify doodles. If
   a single doodle is selected it is the target; otherwise the non-global doodle
   under the pointer is focused, falling back to the global doodle. Drawing-area
   tools never create a new doodle element.
 - **Visibility** and **lock** are stored per element and are toggled from the
   right element list. Locked elements cannot be selected, moved or edited with
-  the left mouse button; right-click one to unlock it, or right-click empty
-  canvas and choose **Unlock all elements**. The global doodle has no lock
-  control and remains Esc-only.
-- **Right-click** a selection with the Select tool to convert it to a doodle,
-  merge it into the global doodle, group it, delete it, toggle visibility or
-  lock it.
-- A selected rectangle shows a **Features** card with **Text**, **Fill** and
-  **Border** checkboxes. Each checked feature opens its own nested settings
-  card. Text is a rectangle feature; enable it with the Text checkbox or Enter.
+  the left mouse button; unlock them with the row's unlock button. The global
+  doodle has no lock control and remains Esc-only.
+- Use the element list's row actions for visibility/lock and its right-click
+  card for duplicate/delete. The Select tool's canvas right-click no longer
+  opens an old context menu.
+- A selected rectangle shows a **Features** card with **Text**, **Fill**,
+  **Border** and **Interrupt** checkboxes. Each checked feature opens its own
+  nested settings card. Text is a rectangle feature; enable it with the Text
+  checkbox or Enter.
 
 ## Grid, canvas and view
 
@@ -349,9 +407,9 @@ The **Export** menu offers:
 - **Export Markdown file** — `.md` with a fenced art block.
 - **Insert into active note** — inserts a fenced block at the cursor.
 
-The current release lives in **`dist/unidraw-0.2.8/`**: the three plugin
-files plus `unidraw-0.2.8.zip`. Previous releases are kept compressed in
-**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/`, `unidraw-0.2.2/`, `unidraw-0.2.3/`, `unidraw-0.2.4/`, `unidraw-0.2.5/`, `unidraw-0.2.6/` and `unidraw-0.2.7/`).
+The current release lives in **`dist/unidraw-0.2.19/`**: the three plugin
+files plus `unidraw-0.2.19.zip`. Previous releases are kept compressed in
+**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/` … `unidraw-0.2.18/`).
 
 ## Settings
 
@@ -413,15 +471,15 @@ font directly, so they can show tiny seams depending on the installed font.
 npm install
 npm run dev          # watch mode, bundles main.js
 npm run build        # type-check, bundle, zip and package dist/
-npm test             # 48 unit tests for the grid, elements, fills and shapes
+npm test             # 53 unit tests for the grid, elements, fills and shapes
 npm run demo         # build the browser demo
 npm run screenshot   # capture the documentation screenshots (Chrome required)
 npm run link -- /path/to/vault
 ```
 
-`npm run build` produces `dist/unidraw-0.2.8/main.js`,
-`dist/unidraw-0.2.8/manifest.json`, `dist/unidraw-0.2.8/styles.css` and
-`dist/unidraw-0.2.8/unidraw-0.2.8.zip`, while leaving `dist/backup/` untouched.
+`npm run build` produces `dist/unidraw-0.2.19/main.js`,
+`dist/unidraw-0.2.19/manifest.json`, `dist/unidraw-0.2.19/styles.css` and
+`dist/unidraw-0.2.19/unidraw-0.2.19.zip`, while leaving `dist/backup/` untouched.
 
 The screenshot script uses `CHROME_PATH` if set, otherwise the macOS Chrome
 location, and drives Chrome through the DevTools Protocol with a temporary

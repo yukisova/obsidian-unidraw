@@ -46,7 +46,9 @@ export const DEFAULT_MIN_ROWS = 20;
 export const MAX_CANVAS_COLS = 1200;
 export const MAX_CANVAS_ROWS = 800;
 
-const STROKES: StrokeStyle[] = ["light", "heavy", "double", "rounded", "dashed", "ascii"];
+const STROKES: StrokeStyle[] = [
+  "light", "heavy", "double", "rounded", "dashed", "dash2", "dash4", "heavyDash2", "heavyDash3", "heavyDash4", "ascii",
+];
 const ROUTES: LineRoute[] = ["straight", "diagonal", "elbow"];
 const ARROWS: ArrowStyle[] = ["none", "line", "hollow", "solid"];
 const FONTS: TextTransform[] = [
@@ -131,6 +133,20 @@ function normalizeObject(raw: unknown): DrawingObject | null {
     let fillEnabled = data.fillEnabled === false ? false : data.fillEnabled === true ? true : fill !== null;
     const normalizedFill = fillEnabled && fill === null ? "" : fill;
     if (!fillEnabled) fillEnabled = false;
+    const interruptRaw = data.interrupt && typeof data.interrupt === "object" ? data.interrupt as Record<string, unknown> : null;
+    const interrupt = interruptRaw
+      ? {
+          segment: clampInt(interruptRaw.segment, 1, 999, 2),
+          gap: clampInt(interruptRaw.gap, 1, 999, 2),
+          offset: clampInt(interruptRaw.offset, 0, 9999, 0),
+        }
+      : undefined;
+    const fillMode =
+      data.fillMode === "empty" || data.fillMode === "block" || data.fillMode === "custom"
+        ? data.fillMode
+        : normalizedFill === ""
+          ? "empty"
+          : "custom";
     const object: RectObject = {
       id,
       kind: "rect",
@@ -145,8 +161,11 @@ function normalizeObject(raw: unknown): DrawingObject | null {
       fillChar: normalizedFill && normalizedFill !== "" ? normalizedFill : asChar(data.fillChar, "█"),
       fill: normalizedFill,
       fillEnabled,
+      fillMode,
       style: pick(STROKES, data.style, "light"),
       borderless: legacyText ? true : data.borderless === true ? true : undefined,
+      interrupt,
+      interruptEnabled: data.interruptEnabled === true,
       textEnabled,
     };
     if (legacyText || hasText || textEnabled) {

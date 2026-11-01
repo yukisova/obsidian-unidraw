@@ -442,3 +442,113 @@ test("legacy text objects gain text-only rectangle features", () => {
   eq(element && element.kind === "rect" ? element.fillEnabled : true, false);
   eq(element && element.kind === "rect" ? element.borderless : false, true);
 });
+
+test("rectangle fill tab mode survives JSON serialization", () => {
+  const data = createDefaultData(12, 8);
+  data.layers[0].objects.push({
+    id: "mode-rect",
+    kind: "rect",
+    x: 1,
+    y: 1,
+    w: 6,
+    h: 4,
+    filled: true,
+    fillChar: "▓",
+    fill: "▓",
+    fillEnabled: true,
+    fillMode: "block",
+    style: "light",
+  });
+  const parsed = parseUnidraw(serializeUnidraw(data));
+  const element = parsed.layers[0].objects.find((object) => object.id === "mode-rect");
+  eq(element && element.kind === "rect" ? element.fillMode : "", "block");
+  eq(element && element.kind === "rect" ? element.fill : "", "▓");
+});
+
+test("heavy dash border presets use the heavy dashed glyph family", () => {
+  const data = createDefaultData(14, 8);
+  data.layers[0].objects.push({
+    id: "heavy-dash",
+    kind: "rect",
+    x: 1,
+    y: 1,
+    w: 8,
+    h: 5,
+    filled: false,
+    fillChar: " ",
+    style: "heavyDash3",
+  });
+  const art = composedText(data);
+  ok(art.includes("╍") || art.includes("┅"));
+  ok(art.includes("┏"));
+});
+
+test("dash 2/3/4 border presets map to the requested Unicode families", () => {
+  const cases: Array<[import("../src/core/types").StrokeStyle, string, string]> = [
+    ["dash2", "╎", "╌"],
+    ["heavyDash2", "╏", "╍"],
+    ["dashed", "┆", "┄"],
+    ["heavyDash3", "┇", "┅"],
+    ["dash4", "┊", "┈"],
+    ["heavyDash4", "┋", "┉"],
+  ];
+  for (const [style, vertical, horizontal] of cases) {
+    const data = createDefaultData(14, 8);
+    data.layers[0].objects.push({
+      id: `dash-${style}`,
+      kind: "rect",
+      x: 1,
+      y: 1,
+      w: 8,
+      h: 5,
+      filled: false,
+      fillChar: " ",
+      style,
+    });
+    const art = composedText(data);
+    ok(art.includes(vertical), `${style} vertical ${vertical}`);
+    ok(art.includes(horizontal), `${style} horizontal ${horizontal}`);
+  }
+});
+
+test("single-row and single-column rectangles use half-line caps", () => {
+  const data = createDefaultData(14, 10);
+  data.layers[0].objects.push(
+    { id: "h-line", kind: "rect", x: 1, y: 2, w: 3, h: 1, filled: false, fillChar: " ", style: "light" },
+    { id: "v-line", kind: "rect", x: 6, y: 2, w: 1, h: 3, filled: false, fillChar: " ", style: "light" },
+  );
+  const art = composedText(data);
+  ok(art.includes("╶─╴"));
+  ok(art.includes("╷"));
+  ok(art.includes("│"));
+  ok(art.includes("╵"));
+});
+
+test("interrupted rectangle borders follow segment, gap and offset", () => {
+  const make = (segment: number, gap: number, offset: number): string => {
+    const data = createDefaultData(14, 9);
+    data.layers[0].objects.push({
+      id: "interrupt",
+      kind: "rect",
+      x: 1,
+      y: 1,
+      w: 10,
+      h: 5,
+      filled: false,
+      fillChar: " ",
+      style: "light",
+      interruptEnabled: true,
+      interrupt: { segment, gap, offset },
+    });
+    return composedText(data);
+  };
+  const alternating = make(1, 1, 0);
+  ok(alternating.includes("┌ ─ ─ ─ ─"));
+  ok(alternating.includes("└ ─ ─ ─ ─"));
+  const doubled = make(2, 2, 0);
+  ok(doubled.includes("┌─  ──  ─┐"));
+  ok(doubled.includes(" ──  ──  ┘"));
+  const offset = make(2, 2, 1);
+  ok(offset.includes(" ──  ──  ┐"));
+  ok(offset.includes("└─  ──  ─┘"));
+});

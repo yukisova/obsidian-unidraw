@@ -41,6 +41,14 @@ export interface LineObject extends ObjectBase {
   arrowEnd: ArrowStyle;
 }
 
+export type RectFillMode = "empty" | "block" | "custom";
+
+export interface RectInterrupt {
+  segment: number;
+  gap: number;
+  offset: number;
+}
+
 export interface RectObject extends ObjectBase {
   kind: "rect";
   x: number;
@@ -53,6 +61,8 @@ export interface RectObject extends ObjectBase {
   fill?: string | null;
   /** Master switch for the optional fill feature. */
   fillEnabled?: boolean;
+  /** UI mode for the active fill. */
+  fillMode?: RectFillMode;
   /** Master switch for the optional text feature. */
   textEnabled?: boolean;
   style: StrokeStyle;
@@ -66,6 +76,9 @@ export interface RectObject extends ObjectBase {
   padding?: Padding;
   /** The border feature is disabled when true. */
   borderless?: boolean;
+  /** Optional custom interrupted border pattern. */
+  interrupt?: RectInterrupt;
+  interruptEnabled?: boolean;
 }
 
 export interface CircleObject extends ObjectBase {

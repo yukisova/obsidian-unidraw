@@ -297,14 +297,28 @@ export function renderRect(
     }
   }
   if (border) {
-    drawRectangle(
-      doc,
-      { row: obj.y, col: obj.x },
-      { row: obj.y + obj.h - 1, col: obj.x + obj.w - 1 },
-      fill === null
-        ? { style: obj.style, fill: "none" }
-        : { style: obj.style, fill: "custom", fillChar: fill === "" ? FILL_CLEAR : fill },
-    );
+    const interrupted = obj.interruptEnabled === true && !!obj.interrupt;
+    if (interrupted) {
+      const borderDoc = new DrawingDocument(doc.cols, doc.rows);
+      drawRectangle(
+        borderDoc,
+        { row: obj.y, col: obj.x },
+        { row: obj.y + obj.h - 1, col: obj.x + obj.w - 1 },
+        { style: obj.style, fill: "none" },
+      );
+      applyInterruptPattern(borderDoc, obj);
+      overlayNonBlank(borderDoc, doc);
+      if (fill !== null) fillRectOnly(doc, obj, fill);
+    } else {
+      drawRectangle(
+        doc,
+        { row: obj.y, col: obj.x },
+        { row: obj.y + obj.h - 1, col: obj.x + obj.w - 1 },
+        fill === null
+          ? { style: obj.style, fill: "none" }
+          : { style: obj.style, fill: "custom", fillChar: fill === "" ? FILL_CLEAR : fill },
+      );
+    }
   } else if (fill !== null) {
     fillRectOnly(doc, obj, fill);
   }
@@ -322,6 +336,35 @@ export function renderRect(
       wrap: obj.wrap ?? "down",
       padding: obj.padding ?? { top: 0, right: 1, bottom: 0, left: 1 },
     });
+  }
+}
+
+function applyInterruptPattern(doc: DrawingDocument, obj: RectObject): void {
+  const config = obj.interrupt;
+  if (!config) return;
+  const segment = Math.max(1, Math.round(config.segment));
+  const gap = Math.max(1, Math.round(config.gap));
+  const offset = Math.max(0, Math.round(config.offset));
+  const period = segment + gap;
+  const keep = (index: number): boolean => {
+    const phase = ((index - offset) % period + period) % period;
+    return phase < segment;
+  };
+  const cells: Array<[number, number]> = [];
+  if (obj.h === 1) {
+    for (let c = obj.x; c < obj.x + obj.w; c++) cells.push([obj.y, c]);
+  } else if (obj.w === 1) {
+    for (let r = obj.y; r < obj.y + obj.h; r++) cells.push([r, obj.x]);
+  } else {
+    for (let c = obj.x; c < obj.x + obj.w; c++) cells.push([obj.y, c]);
+    for (let r = obj.y + 1; r < obj.y + obj.h - 1; r++) cells.push([r, obj.x + obj.w - 1]);
+    for (let c = obj.x + obj.w - 1; c >= obj.x; c--) cells.push([obj.y + obj.h - 1, c]);
+    for (let r = obj.y + obj.h - 2; r > obj.y; r--) cells.push([r, obj.x]);
+  }
+  for (let index = 0; index < cells.length; index++) {
+    if (keep(index)) continue;
+    const [r, c] = cells[index];
+    doc.erase(r, c);
   }
 }
 

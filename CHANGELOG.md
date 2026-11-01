@@ -1,5 +1,75 @@
 # Changelog
 
+## 0.2.19 (2026-11-01)
+
+- Added an optional Interrupt feature for rectangle borders with segment
+  length, gap length and offset inputs. The pattern wraps independently around
+  horizontal and vertical edges, preserving the selected stroke style.
+
+## 0.2.18 (2026-11-01)
+
+- 1×n and n×1 rectangles now use half-line end caps: `╶─╴` horizontally and
+  `╷│╵` vertically (style-aware equivalents for heavy, double, dashed, ASCII).
+
+## 0.2.17 (2026-11-01)
+
+- Removed the old Select-tool canvas right-click context menu; right-drag still
+  scales the selection.
+- Removed text labels from the four border pattern buttons.
+- Confirmed and tested the Unicode dash families for Dash 2/3/4 on light and
+  heavy borders.
+
+## 0.2.16 (2026-11-01)
+
+- Straight and Bold borders now offer Solid, Dash 2, Dash 3 and Dash 4
+  patterns; Rounded remains limited to Straight.
+- Cmd/Ctrl+D duplicates the selection at the current cursor cell.
+- Moving and resizing elements can extend past the current auto-fit canvas
+  bounds; the canvas grows live during the gesture.
+
+## 0.2.15 (2026-11-01)
+
+- Removed labels from the fill-mode and border-style tab buttons; each tab is
+  now identified by its icon and tooltip.
+- The border detail area is now conditional: dashed/rounded controls appear
+  for Straight, Bold, Dashed and Rounded, and are hidden for Double and ASCII.
+
+## 0.2.14 (2026-11-01)
+
+- Fill tabs now use icons instead of preview glyphs.
+- Border settings use a tabbed line-style card with icons, a dashed option and
+  a rounded checkbox.
+
+## 0.2.13 (2026-11-01)
+
+- Redesigned the rectangle Fill subcard with three preview tabs: Empty,
+  Block and Custom. Block mode exposes a block-glyph grid; Custom mode exposes
+  the fill-character picker.
+
+## 0.2.12 (2026-11-01)
+
+- Centered all interactive controls inside the Text subcard and added small
+  up/right/down/left icons above the four padding inputs.
+
+## 0.2.11 (2026-11-01)
+
+- Restructured the rectangle Text subcard into vertically stacked fields:
+  alignment grid, writing direction, wrap direction and padding. The font
+  selector and the text preview/edit row were removed.
+
+## 0.2.10 (2026-11-01)
+
+- Double-clicking an empty grid cell with the Select tool creates a 20×5
+  borderless, fill-free text rectangle at that position and opens in-canvas
+  text editing. Cancelling removes the temporary text box.
+
+## 0.2.9 (2026-11-01)
+
+- Right-clicking the global doodle row now offers a clear-content action.
+- Enter on a selected rectangle enables its Text feature and starts in-canvas
+  editing. The editor isolates the rectangle, matches the character-cell
+  spacing and no longer shows elements underneath the text.
+
 ## 0.2.8 (2026-11-01)
 
 - Text editing now happens in place over the rectangle on the canvas. The

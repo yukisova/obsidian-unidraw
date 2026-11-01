@@ -47,6 +47,10 @@ import chevronDown from "lucide-static/icons/chevron-down.svg";
 import chevronsUp from "lucide-static/icons/chevrons-up.svg";
 import chevronsDown from "lucide-static/icons/chevrons-down.svg";
 import globe from "lucide-static/icons/globe.svg";
+import bold from "lucide-static/icons/bold.svg";
+import equal from "lucide-static/icons/equal.svg";
+import terminal from "lucide-static/icons/terminal.svg";
+import moreHorizontal from "lucide-static/icons/more-horizontal.svg";
 import ellipsisVertical from "lucide-static/icons/ellipsis-vertical.svg";
 import trash from "lucide-static/icons/trash.svg";
 import alignLeft from "lucide-static/icons/align-left.svg";
@@ -101,6 +105,10 @@ const ICONS: Record<string, string> = {
   "chevrons-up": chevronsUp,
   "chevrons-down": chevronsDown,
   globe,
+  bold,
+  equal,
+  terminal,
+  "more-horizontal": moreHorizontal,
   "ellipsis-vertical": ellipsisVertical,
   trash,
   "align-left": alignLeft,
@@ -203,7 +211,7 @@ const host: UnidrawUIHost = {
   },
   isActive: () => true,
   getSettings: () => settings,
-  getVersion: () => "0.2.8",
+  getVersion: () => "0.2.19",
   requestSave: () => {
     if (!ui) return;
     ui.setSaveState("unsaved");

@@ -1,7 +1,7 @@
 {
   "id": "unidraw",
   "name": "Unidraw",
-  "version": "0.2.8",
+  "version": "0.2.19",
   "minAppVersion": "1.5.0",
   "description": "Draw Unicode character art, element-based diagrams and shapes inside Obsidian.",
   "author": "Unidraw Contributors",
