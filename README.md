@@ -50,7 +50,7 @@ Obsidian view with JSON `.unidraw` element files.
 
 ### From the release package
 
-Build or download `dist/unidraw-0.4.8/unidraw-0.4.8.zip`. Unzip it so that
+Build or download `dist/unidraw-0.4.9/unidraw-0.4.9.zip`. Unzip it so that
 `main.js`, `manifest.json` and `styles.css` live inside:
 
 ```text
@@ -447,9 +447,9 @@ The **Export** menu offers:
   current drawing.
 - **Insert into active note** — inserts a fenced block at the cursor.
 
-The current release lives in **`dist/unidraw-0.4.8/`**: the three plugin
-files plus `unidraw-0.4.8.zip`. Previous releases are kept compressed in
-**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/` … `unidraw-0.4.7/`).
+The current release lives in **`dist/unidraw-0.4.9/`**: the three plugin
+files plus `unidraw-0.4.9.zip`. Previous releases are kept compressed in
+**`dist/backup/`** (`unidraw-0.1.0/`, `unidraw-0.2.0/`, `unidraw-0.2.1/` … `unidraw-0.4.8/`).
 
 ## Settings
 
@@ -517,9 +517,9 @@ npm run screenshot   # capture the documentation screenshots (Chrome required)
 npm run link -- /path/to/vault
 ```
 
-`npm run build` produces `dist/unidraw-0.4.8/main.js`,
-`dist/unidraw-0.4.8/manifest.json`, `dist/unidraw-0.4.8/styles.css` and
-`dist/unidraw-0.4.8/unidraw-0.4.8.zip`, while leaving `dist/backup/` untouched.
+`npm run build` produces `dist/unidraw-0.4.9/main.js`,
+`dist/unidraw-0.4.9/manifest.json`, `dist/unidraw-0.4.9/styles.css` and
+`dist/unidraw-0.4.9/unidraw-0.4.9.zip`, while leaving `dist/backup/` untouched.
 
 The screenshot script uses `CHROME_PATH` if set, otherwise the macOS Chrome
 location, and drives Chrome through the DevTools Protocol with a temporary

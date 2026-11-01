@@ -212,7 +212,7 @@ const host: UnidrawUIHost = {
   },
   isActive: () => true,
   getSettings: () => settings,
-  getVersion: () => "0.4.8",
+  getVersion: () => "0.4.9",
   isMac: () => true,
   saveGroupTemplate: async () => true,
   requestSave: () => {

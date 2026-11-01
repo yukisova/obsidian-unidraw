@@ -1,6 +1,6 @@
 {
   "name": "unidraw",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "Draw Unicode character art and diagrams.",
   "main": "main.js",
   "scripts": {
@@ -20,7 +20,7 @@
     "diagram",
     "drawing"
   ],
-  "author": "Unidraw Contributors",
+  "author": "yukisova",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.10.0",

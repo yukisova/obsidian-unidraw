@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.9 (2026-11-01)
+
+- Changed the plugin author to **yukisova**.
+
 ## 0.4.8 (2026-11-01)
 
 - Fixed long-session rendering artifacts in Obsidian chrome by removing

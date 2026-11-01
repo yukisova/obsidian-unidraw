@@ -4,7 +4,7 @@
  */
 export const SAMPLE_ART = String.raw`
    ╔══════════════════════════════════════════════════════════════════════════════════╗
-   ║                    U N I D R A W  ✦  Unicode character studio            v0.4.8  ║
+   ║                    U N I D R A W  ✦  Unicode character studio            v0.4.9  ║
    ╚══════════════════════════════════════════════════════════════════════════════════╝
 
 
