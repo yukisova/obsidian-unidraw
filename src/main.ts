@@ -235,7 +235,6 @@ export default class UnidrawPlugin extends Plugin {
       state: { file: file.path },
       active: true,
     });
-    void this.app.workspace.revealLeaf(leaf);
     new Notice(this.t("notice.created", { name: file.name }));
   }
 }

@@ -3,6 +3,8 @@
 ## 0.4.9 (2026-11-01)
 
 - Changed the plugin author to **yukisova**.
+- Replaced newer `revealLeaf` API with the `active: true` view state for
+  compatibility with `minAppVersion` 1.5.0.
 
 ## 0.4.8 (2026-11-01)
 
